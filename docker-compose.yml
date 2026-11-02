@@ -33,5 +33,21 @@ services:
       db:
         condition: service_healthy   # wait for the healthcheck, not just container start
 
+  # One-off batch job: `make ingest`. Same image as the api, different command.
+  # The "jobs" profile keeps it out of `docker compose up`.
+  ingest:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    profiles: ["jobs"]
+    command: ["python", "-m", "papergraph.ingest.load"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-papergraph}:${POSTGRES_PASSWORD:-papergraph}@db:5432/${POSTGRES_DB:-papergraph}
+    volumes:
+      - ./data:/app/data:ro   # the 5 GB snapshot is mounted, never copied into the image
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
