@@ -1,4 +1,4 @@
-.PHONY: help install up down logs ps nuke test lint format check
+.PHONY: help install up down logs ps nuke migrate ingest psql test lint format check
 
 help:  ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -20,6 +20,16 @@ ps:  ## Show service status and health
 
 nuke:  ## Stop the stack AND delete the database volume
 	docker compose down -v
+
+migrate:  ## Apply pending database migrations (inside the api image)
+	docker compose run --rm --build api python -m papergraph.migrate
+
+LIMIT ?=
+ingest:  ## Load arXiv ML papers into Postgres (LIMIT=5000 for a quick run)
+	docker compose run --rm --build ingest python -m papergraph.ingest.load $(if $(LIMIT),--limit $(LIMIT))
+
+psql:  ## Open a SQL shell on the database
+	docker compose exec db psql -U papergraph
 
 test:  ## Run unit tests (no Docker, network or API key needed)
 	uv run pytest
