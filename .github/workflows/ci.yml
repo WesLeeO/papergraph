@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: make lint
+      - run: make test
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      # Smoke test: the full stack builds, starts and reports ready.
+      - run: docker compose up -d --build --wait
+      - run: curl --fail --silent localhost:8000/ready
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down -v
