@@ -6,8 +6,10 @@ agent dig through them for you. Runs entirely on your own computer, for free.**
 - **Search.** Describe what you're interested in, in plain language ("making
   LLM inference faster with quantization"), and scroll through ranked papers
   from arXiv's machine-learning categories (results keep loading as you
-  scroll). Filter by author, year, venue (NeurIPS, ICLR, ACL, CVPR, …) and
-  category.
+  scroll). Type names, venues and years too: "world models by Yann LeCun
+  since 2024", "ICLR 2025 diffusion", or an arXiv id. PaperGraph recognizes
+  them, shows what it understood as removable chips, and searches the rest
+  as the topic.
 - **Research agent.** Ask a research question. A local AI model plans
   searches, reads the results, searches again where something is missing, and
   writes an answer with a reading list. It may only cite papers it actually
@@ -149,6 +151,10 @@ research question ─ agent loop (Qwen3 8B via Ollama, running locally)
 - **Keyword + semantic search, fused.** BM25 is good at exact terms (method
   names, datasets); embeddings are good at paraphrases. Reciprocal Rank Fusion
   combines the two rankings.
+- **Query understanding.** Before retrieval, rules and database lookups pull
+  author names (any spelling: "Yann Le Cun", "Y. LeCun"), venues, years and
+  arXiv ids out of the query and turn them into filters; only the rest is
+  matched against paper content.
 - **Reranking.** A small cross-encoder (`mxbai-rerank-xsmall`) reads the
   question and each of the top 20 abstracts together, and reorders them.
 - **Agent.** A hand-written tool-calling loop with guardrails: a step limit,

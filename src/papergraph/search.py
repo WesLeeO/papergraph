@@ -16,6 +16,7 @@ import psycopg
 from psycopg import sql
 
 from papergraph.encoders import get_encoder, get_model
+from papergraph.query import Understood, understand
 from papergraph.rerank import cross_encoder, merge_reranked
 from papergraph.retrieval import dense, fusion
 from papergraph.retrieval.filters import Filters, filter_sql
@@ -34,6 +35,9 @@ RERANK_TOP_N = 20
 # Candidates per retriever when ranking a query for browsing. Up to twice this
 # many papers come out of fusion: the "end of results" a user can scroll to.
 POOL = 300
+# A run of words counts as an author name only if it matches someone with at
+# least this many papers: fewer, and topic words could pass for rare names.
+MIN_AUTHOR_PAPERS = 2
 
 T = TypeVar("T")
 
@@ -209,11 +213,13 @@ def _tokens(name: str) -> list[str]:
 def name_matches(query: str, candidate: str) -> bool:
     """Whether an author name in the data plausibly refers to the queried person.
 
-    Same surname (last word), and if the query has a first name, the
-    candidate's first name agrees with it or is its initial:
+    Same surname, and if the query has a first name, the candidate's first
+    name agrees with it or is its initial:
     'Yann LeCun' matches 'Yann LeCun', 'Yann Lecun', 'Y. LeCun' and
-    'Yann André LeCun', but not 'Le Cam' or 'Xavier LeCun'. Names written
-    surname first ('Li Fei-Fei' for 'Fei-Fei Li') match too.
+    'Yann André LeCun', but not 'Le Cam' or 'Xavier LeCun'. Surnames are
+    compared without spaces, so 'Yann Le Cun' matches 'Yann LeCun' and
+    'van der Maaten' matches 'Laurens van der Maaten'. Names written surname
+    first ('Li Fei-Fei' for 'Fei-Fei Li') match too.
     """
     q, c = _tokens(query), _tokens(candidate)
     if not q or not c:
@@ -221,11 +227,20 @@ def name_matches(query: str, candidate: str) -> bool:
     return _same_person(q, c) or (len(q) == 2 and _same_person(q[::-1], c))
 
 
+def _surnames(tokens: list[str]) -> set[str]:
+    """Possible surnames: every run of trailing words, spaces removed.
+    ['yann', 'andré', 'lecun'] -> {'andrélecun', 'lecun'}."""
+    if len(tokens) == 1:
+        return {tokens[0]}
+    return {"".join(tokens[j:]) for j in range(1, len(tokens))}
+
+
 def _same_person(q: list[str], c: list[str]) -> bool:
-    if q[-1] != c[-1]:
-        return False
-    if len(q) == 1:  # surname only: any first name
+    c_surnames = _surnames(c)
+    if "".join(q) in c_surnames:  # surname only ('LeCun', 'Le Cun'): any first name
         return True
+    if len(q) == 1 or not (_surnames(q) & c_surnames):
+        return False
     first_q, first_c = q[0], c[0]
     if len(first_q) == 1 or len(first_c) == 1:  # an initial on either side
         return first_q[0] == first_c[0]
@@ -318,3 +333,86 @@ def author_papers(
     """Papers by an author (all spellings of the name), with the variants found."""
     variants, ids = author_ranked_ids(conn, name, query, filters)
     return variants, fetch_papers(conn, ids[offset : offset + k])
+
+
+# --- understood queries ----------------------------------------------------------
+
+
+def browse_ids(conn: psycopg.Connection, filters: Filters) -> list[str]:
+    """Papers matching filters only (no topic, no author), newest first (cached)."""
+
+    def compute() -> list[str]:
+        condition, params = filter_sql(filters, "p")
+        rows = conn.execute(
+            sql.SQL(
+                "SELECT p.id FROM papers p WHERE {} ORDER BY p.published DESC NULLS LAST, p.id "
+                "LIMIT 2000"
+            ).format(condition),
+            params,
+        )
+        return [r[0] for r in rows]
+
+    return _rankings.get_or_compute(("browse", _corpus_key(conn), filters), compute)
+
+
+def _venue_names(conn: psycopg.Connection) -> list[str]:
+    return _rankings.get_or_compute(
+        ("venues", _corpus_key(conn)), lambda: [v for v, _ in venues(conn)]
+    )
+
+
+@dataclass(frozen=True)
+class QueryResult:
+    understood: Understood
+    author_name: str | None  # the author searched (parsed or explicit), as typed
+    matched_authors: list[tuple[str, int]]  # spellings found for it
+    filters: Filters  # parsed and explicit filters combined
+    ids: list[str]  # the full ranking; pages are slices of it
+
+
+def run_query(
+    conn: psycopg.Connection,
+    text: str,
+    *,
+    author: str = "",
+    filters: Filters | None = None,
+    skip: Sequence[str] = (),
+    rerank: bool = True,
+) -> QueryResult:
+    """Understand `text` (papergraph.query), then rank papers accordingly.
+
+    `author` and `filters` come from the filter panel and take precedence over
+    what the parser found in the text.
+    """
+    explicit = filters or Filters()
+    skipped = set(skip) | ({"author"} if author.strip() else set())
+    memo: dict[str, bool] = {}
+
+    def is_author(name: str) -> bool:
+        if name not in memo:  # one lookup per candidate name
+            variants = find_authors(conn, name)
+            memo[name] = bool(variants) and variants[0][1] >= MIN_AUTHOR_PAPERS
+        return memo[name]
+
+    u = understand(text, venues=_venue_names(conn), is_author=is_author, skip=skipped)
+    f = Filters(
+        year_from=explicit.year_from or u.year_from,
+        year_to=explicit.year_to or u.year_to,
+        venues=explicit.venues or u.venues,
+        categories=explicit.categories,
+        venue_year=u.venue_year if not explicit.venues else None,
+    )
+    name = author.strip() or u.author or ""
+    topic = u.topic
+    matched: list[tuple[str, int]] = []
+    if name:
+        matched, ids = author_ranked_ids(conn, name, topic or None, f)
+    elif topic:
+        ids = ranked_ids(conn, topic, f, rerank)
+    elif not f.empty:
+        ids = browse_ids(conn, f)
+    else:
+        ids = []
+    if u.arxiv_id and get_paper(conn, u.arxiv_id) is not None:
+        ids = [u.arxiv_id, *(i for i in ids if i != u.arxiv_id)]
+    return QueryResult(u, name or None, matched, f, ids)

@@ -18,10 +18,15 @@ class Filters:
     year_to: int | None = None
     venues: tuple[str, ...] = field(default_factory=tuple)  # normalized names, e.g. "ICLR"
     categories: tuple[str, ...] = field(default_factory=tuple)  # arXiv, e.g. "cs.CL"
+    # The venue's edition ("ICLR 2024"), not the arXiv date: an ICLR 2025 paper
+    # is often posted in 2024.
+    venue_year: int | None = None
 
     @property
     def empty(self) -> bool:
-        return not (self.year_from or self.year_to or self.venues or self.categories)
+        return not (
+            self.year_from or self.year_to or self.venues or self.categories or self.venue_year
+        )
 
 
 def filter_sql(f: Filters, paper: str = "p") -> tuple[sql.Composable, dict[str, Any]]:
@@ -42,6 +47,9 @@ def filter_sql(f: Filters, paper: str = "p") -> tuple[sql.Composable, dict[str, 
     if f.venues:
         parts.append(sql.SQL("{}.venue = ANY(%(f_venues)s)").format(alias))
         params["f_venues"] = list(f.venues)
+    if f.venue_year:
+        parts.append(sql.SQL("{}.venue_year = %(f_venue_year)s").format(alias))
+        params["f_venue_year"] = int(f.venue_year)
     if f.categories:
         parts.append(
             sql.SQL(
