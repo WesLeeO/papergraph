@@ -189,12 +189,12 @@ A milestone is done only when its eval or test evidence exists.
    nDCG@10 0.496 [0.436, 0.556] vs 0.352 for the FTS baseline (paired +0.143
    [+0.103, +0.186]); Recall@100 0.813. SPECTER2 lost to bge-small (−0.198
    nDCG@10 dense). BM25 defaults kept; RRF weights not tuned.
-5. **Reranking:** cross-encoder vs LLM rerank, with the quality vs latency trade-off.
-   Done so far (dev): cross-encoders on the hybrid. Rerank depth 20 keeps the
-   full gain of depth 100 at 1/5 of the cost; bge-reranker-v2-m3 @20 nDCG@10
-   0.556 (+0.061) in 1.07 s, mxbai-xsmall @20 0.537 (+0.042) in 0.43 s (gap to
-   bge not significant, chosen as default), MiniLM-L6 no gain. Left: LLM rerank,
-   M5 report.
+5. ✅ **Reranking:** cross-encoder vs LLM rerank, with the quality vs latency trade-off.
+   See `reports/m5/README.md`. Cross-encoder on the hybrid: +0.06 nDCG@10,
+   mostly on specific questions; depth 20 keeps the full gain at 1/5 of the
+   cost. Default mxbai-rerank-xsmall @20: nDCG@10 0.537 (+0.042) in 0.43 s
+   (bge-reranker-v2-m3 @20: 0.556 in 1.07 s, gap not significant). LLM rerank
+   skipped: API usage is billed separately from the Claude plan.
 6. **Venues v2:** DBLP title matching with measured coverage; venue as a ranking signal.
 7. **Graph:** author and kNN edges, 1-hop and PPR expansion; entity edges as an experiment.
 8. **Explanations:** grounded explanations, LLM judge, judge calibration.
