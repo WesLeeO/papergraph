@@ -1,0 +1,7 @@
+# Harness smoke baseline: Postgres full-text ranking, no embeddings.
+# Deliberately simple: it proves the eval harness end to end. Real BM25, dense
+# and hybrid retrieval arrive in milestone 4 and must beat this.
+name: baseline-fts
+retriever:
+  kind: pg_fts
+depth: 100

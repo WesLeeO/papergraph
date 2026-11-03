@@ -15,23 +15,14 @@ matters.
 
 ## Working mode (read first)
 
-Claude acts as a **coach on the core and a builder on the boilerplate**.
+**Claude writes the code for every milestone**, core modules included
+(retrieval, graph, reranking, metrics, stats), with tests. Changed from
+"coach on the core" on 2026-11-03 at the owner's request.
 
-**The user writes these (Claude explains, scaffolds signatures and tests, reviews):**
-- `src/papergraph/retrieval/`: BM25, dense search, hybrid fusion
-- `src/papergraph/graph/`: graph edges and neighbor expansion
-- `src/papergraph/rerank/`: reranker integration and comparison
-- `src/papergraph/evals/metrics.py`: all metric implementations
-
-For these: explain the concept and its trade-offs, propose a function signature
-and failing unit tests, then let the user implement it. Review their code
-critically (correctness, edge cases, complexity). Give hints before full
-solutions. If the user explicitly says "just write it", do so, but explain each
-part afterwards.
-
-**Claude writes freely:** Dockerfiles, compose, Makefile, CI, config loading,
-data download and parsing, DB schema and migrations, FastAPI glue, UI,
-plotting and report scripts, and the eval *runner* plumbing (not the metrics).
+Learning is still the goal, so after writing core logic, explain the concept,
+the trade-offs and each non-obvious decision. When the owner writes code
+themselves, fix only real bugs and keep their structure and style; suggest
+refactors instead of applying them.
 
 Always explain *why* for non-obvious DevOps choices (multi-stage builds,
 healthchecks, layer caching, job scheduling). Learning DevOps is an explicit
@@ -183,9 +174,14 @@ smoke test fails if Recall@10 drops below the committed baseline threshold.
 A milestone is done only when its eval or test evidence exists.
 
 1. ✅ **Infra skeleton:** compose (db + api), Makefile, healthchecks, CI lint and tests.
-2. **Corpus ingest:** arXiv ML papers in Postgres, regex venues, paper-level embeddings.
-3. **Eval harness v0:** LitSearch indexed, runner, retrieval metrics, run
-   artifacts. Do this before any clever retrieval.
+2. ✅ **Corpus ingest:** arXiv ML papers in Postgres, regex venues, paper-level embeddings.
+   581,162 papers, 12.3% with a regex venue. bge-small: 210k embedded so far
+   (newest first from now on; `make embed` resumes), ~112 papers/s on MPS.
+3. ✅ **Eval harness v0:** LitSearch indexed, runner, retrieval metrics, run
+   artifacts. Do this before any clever retrieval. LitSearch in schema
+   `bench_litsearch` (64,183 papers, 597 queries, hashed 198 dev / 399 test
+   split), bootstrap CIs, `make compare` with paired tests. Reference baseline:
+   `configs/baseline.yaml` (Postgres FTS), dev Recall@10 0.459 [0.389, 0.529].
 4. **Search baselines:** BM25, dense (bge vs SPECTER2), hybrid RRF. First comparison table.
 5. **Reranking:** cross-encoder vs LLM rerank, with the quality vs latency trade-off.
 6. **Venues v2:** DBLP title matching with measured coverage; venue as a ranking signal.

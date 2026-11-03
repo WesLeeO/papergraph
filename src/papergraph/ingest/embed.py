@@ -15,7 +15,7 @@ import psycopg
 from pgvector.psycopg import register_vector
 from sentence_transformers import SentenceTransformer
 
-from papergraph.config import get_settings
+from papergraph.db import connect
 from papergraph.ingest.text import paper_text
 
 MODEL = "BAAI/bge-small-en-v1.5"
@@ -54,6 +54,7 @@ def _build_index(conn: psycopg.Connection, mem: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--schema", default="public", help="corpus namespace, e.g. bench_litsearch")
     parser.add_argument("--limit", type=int, default=None, help="stop after N papers")
     parser.add_argument("--chunk", type=int, default=5000, help="papers fetched per round")
     parser.add_argument("--batch-size", type=int, default=128, help="papers per forward pass")
@@ -71,7 +72,7 @@ def main() -> None:
     # autocommit: otherwise the first SELECT opens a transaction that lasts the
     # whole run, `conn.transaction()` only makes savepoints inside it, and an
     # interrupted run loses everything. With autocommit, each chunk commits.
-    with psycopg.connect(get_settings().database_url, autocommit=True) as conn:
+    with connect(args.schema, autocommit=True) as conn:
         register_vector(conn)  # teaches psycopg to send numpy arrays as pgvector values
         while args.limit is None or done < args.limit:
             size = args.chunk if args.limit is None else min(args.chunk, args.limit - done)
