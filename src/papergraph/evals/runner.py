@@ -153,6 +153,9 @@ def run(cfg: RunConfig, bench: str, split: str, limit: int | None) -> Path:
     benchmark = get_benchmark(bench)
     retrieve = RETRIEVERS[cfg.retriever.kind]
     started = datetime.now(UTC)
+    # Before anything is written: the run's own new directory would otherwise
+    # show up in `git status` and mark every run dirty.
+    git = git_state()
     results: list[QueryResult] = []
     with connect(benchmark.schema, autocommit=True) as conn:
         queries = load_queries(conn, split)[:limit]
@@ -180,7 +183,7 @@ def run(cfg: RunConfig, bench: str, split: str, limit: int | None) -> Path:
         "limit": limit,
         "corpus_schema": benchmark.schema,
         "corpus_revision": benchmark.revision,
-        "git": git_state(),
+        "git": git,
         "started_at": started.isoformat(),
         "duration_s": round((datetime.now(UTC) - started).total_seconds(), 1),
     }
