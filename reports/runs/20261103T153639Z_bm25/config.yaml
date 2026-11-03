@@ -1,0 +1,14 @@
+name: bm25
+retriever:
+  kind: bm25
+  params:
+    k1: 1.2
+    b: 0.75
+    title_boost: 1.0
+depth: 100
+recall_ks:
+- 10
+- 20
+- 50
+- 100
+ndcg_k: 10

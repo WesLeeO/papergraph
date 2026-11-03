@@ -39,7 +39,8 @@ from papergraph.retrieval.registry import Retriever
 # eval-only reference baseline.
 RETRIEVERS: dict[str, Retriever] = {"pg_fts": pg_fts, **CORE_RETRIEVERS}
 
-RUNS_DIR = Path("reports/runs")
+REPORTS_DIR = Path("reports")
+RUNS_DIR = REPORTS_DIR / "runs"
 
 
 @dataclass(frozen=True)
@@ -120,17 +121,19 @@ def run_dir_name(started: datetime, name: str) -> str:
 def git_state(cwd: Path | None = None) -> dict[str, Any]:
     """Commit SHA and whether the working tree had uncommitted changes.
 
-    A dirty run can't be reproduced from its SHA alone, so it is flagged.
-    Run outputs (reports/runs/) are excluded: they are results, not code, and
-    counting them would mark every run after the first one dirty.
+    A dirty run can't be reproduced from its SHA alone, so it is flagged, with
+    the offending paths listed. reports/ is excluded: run outputs and write-ups
+    are results, not code, and counting them would mark every run after the
+    first one dirty.
     """
 
     def git(*args: str) -> str:
         out = subprocess.run(["git", *args], capture_output=True, text=True, cwd=cwd)
         return out.stdout.strip()
 
-    status = git("status", "--porcelain", "--", ".", f":(exclude){RUNS_DIR}")
-    return {"sha": git("rev-parse", "HEAD") or None, "dirty": bool(status)}
+    status = git("status", "--porcelain", "--", ".", f":(exclude){REPORTS_DIR}")
+    files = [line[3:] for line in status.splitlines()]
+    return {"sha": git("rev-parse", "HEAD") or None, "dirty": bool(files), "dirty_files": files}
 
 
 # --- database ---------------------------------------------------------------

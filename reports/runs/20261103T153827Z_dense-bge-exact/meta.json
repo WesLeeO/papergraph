@@ -1,0 +1,15 @@
+{
+  "name": "dense-bge-exact",
+  "benchmark": "litsearch",
+  "split": "dev",
+  "n_queries": 198,
+  "limit": null,
+  "corpus_schema": "bench_litsearch",
+  "corpus_revision": "9573fb284a1026c998df47024b888a163f0f0e25",
+  "git": {
+    "sha": "9d4df6c026a919a2c6838c3a01ec8650ffa432ac",
+    "dirty": true
+  },
+  "started_at": "2026-11-03T15:38:27.906171+00:00",
+  "duration_s": 17.6
+}

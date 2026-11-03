@@ -108,5 +108,11 @@ def test_git_state_ignores_run_outputs_but_not_code(tmp_path: Path) -> None:
     (run / "summary.json").write_text("{}")
     assert git_state(tmp_path)["dirty"] is False
 
+    # Nor are write-ups next to them.
+    (tmp_path / "reports" / "m4.md").write_text("draft")
+    assert git_state(tmp_path)["dirty"] is False
+
     (tmp_path / "retriever.py").write_text("print('changed')")
-    assert git_state(tmp_path)["dirty"] is True
+    state = git_state(tmp_path)
+    assert state["dirty"] is True
+    assert state["dirty_files"] == ["retriever.py"]

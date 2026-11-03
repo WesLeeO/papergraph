@@ -182,7 +182,11 @@ A milestone is done only when its eval or test evidence exists.
    `bench_litsearch` (64,183 papers, 597 queries, hashed 198 dev / 399 test
    split), bootstrap CIs, `make compare` with paired tests. Reference baseline:
    `configs/baseline.yaml` (Postgres FTS), dev Recall@10 0.459 [0.389, 0.529].
-4. **Search baselines:** BM25, dense (bge vs SPECTER2), hybrid RRF. First comparison table.
+4. ✅ **Search baselines:** BM25, dense (bge vs SPECTER2), hybrid RRF. First comparison table.
+   See `reports/m4/README.md`. Dev winner: hybrid RRF (BM25 + bge-small),
+   nDCG@10 0.496 [0.436, 0.556] vs 0.352 for the FTS baseline (paired +0.143
+   [+0.103, +0.186]); Recall@100 0.813. SPECTER2 lost to bge-small (−0.198
+   nDCG@10 dense). BM25 defaults kept; RRF weights not tuned.
 5. **Reranking:** cross-encoder vs LLM rerank, with the quality vs latency trade-off.
 6. **Venues v2:** DBLP title matching with measured coverage; venue as a ranking signal.
 7. **Graph:** author and kNN edges, 1-hop and PPR expansion; entity edges as an experiment.
