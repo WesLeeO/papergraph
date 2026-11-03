@@ -1,0 +1,9 @@
+# Ablation: dense-bge without the query instruction prefix.
+name: dense-bge-noinstr
+retriever:
+  kind: dense
+  params:
+    model: bge-small
+    query_instruction: false
+    ef_search: 100
+depth: 100

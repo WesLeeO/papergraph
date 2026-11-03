@@ -17,7 +17,7 @@ import json
 import subprocess
 import time
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,13 +32,15 @@ from papergraph.evals.benchmarks import get_benchmark
 from papergraph.evals.config import RunConfig, load_config
 from papergraph.evals.metrics import ndcg_at_k, recall_at_k, reciprocal_rank
 from papergraph.evals.stats import bootstrap_ci
+from papergraph.retrieval.registry import RETRIEVERS as CORE_RETRIEVERS
+from papergraph.retrieval.registry import Retriever
 
-Retriever = Callable[..., list[str]]  # (conn, query, k, **params) -> paper ids
+# Config `retriever.kind` -> function: the product retrievers plus the
+# eval-only reference baseline.
+RETRIEVERS: dict[str, Retriever] = {"pg_fts": pg_fts, **CORE_RETRIEVERS}
 
-# Config `retriever.kind` -> function. Milestone 4 adds bm25, dense, hybrid here.
-RETRIEVERS: dict[str, Retriever] = {"pg_fts": pg_fts}
-
-RUNS_DIR = Path("reports/runs")
+REPORTS_DIR = Path("reports")
+RUNS_DIR = REPORTS_DIR / "runs"
 
 
 @dataclass(frozen=True)
@@ -116,16 +118,22 @@ def run_dir_name(started: datetime, name: str) -> str:
     return f"{started.astimezone(UTC):%Y%m%dT%H%M%SZ}_{name}"
 
 
-def git_state() -> dict[str, Any]:
+def git_state(cwd: Path | None = None) -> dict[str, Any]:
     """Commit SHA and whether the working tree had uncommitted changes.
 
-    A dirty run can't be reproduced from its SHA alone, so it is flagged.
+    A dirty run can't be reproduced from its SHA alone, so it is flagged, with
+    the offending paths listed. reports/ is excluded: run outputs and write-ups
+    are results, not code, and counting them would mark every run after the
+    first one dirty.
     """
 
     def git(*args: str) -> str:
-        return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
+        out = subprocess.run(["git", *args], capture_output=True, text=True, cwd=cwd)
+        return out.stdout.strip()
 
-    return {"sha": git("rev-parse", "HEAD") or None, "dirty": bool(git("status", "--porcelain"))}
+    status = git("status", "--porcelain", "--", ".", f":(exclude){REPORTS_DIR}")
+    files = [line[3:] for line in status.splitlines()]
+    return {"sha": git("rev-parse", "HEAD") or None, "dirty": bool(files), "dirty_files": files}
 
 
 # --- database ---------------------------------------------------------------

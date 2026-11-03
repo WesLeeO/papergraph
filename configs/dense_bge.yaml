@@ -1,0 +1,10 @@
+# Dense retrieval with bge-small (the vectors from `make embed`), using the
+# query instruction BGE recommends for retrieval.
+name: dense-bge
+retriever:
+  kind: dense
+  params:
+    model: bge-small
+    query_instruction: true
+    ef_search: 100
+depth: 100

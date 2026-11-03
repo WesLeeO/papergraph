@@ -28,18 +28,21 @@ LIMIT ?=
 ingest:  ## Load arXiv ML papers into Postgres (LIMIT=5000 for a quick run)
 	docker compose run --rm --build ingest python -m papergraph.ingest.load $(if $(LIMIT),--limit $(LIMIT))
 
-embed:  ## Embed papers on the host GPU (needs `make up`; LIMIT=5000 for a quick run)
-	uv run --group embed python -m papergraph.ingest.embed $(if $(LIMIT),--limit $(LIMIT))
+MODEL ?= bge-small
+embed:  ## Embed papers on the host GPU (needs `make up`; MODEL=specter2, LIMIT=5000)
+	uv run --group embed python -m papergraph.ingest.embed --model $(MODEL) $(if $(LIMIT),--limit $(LIMIT))
 
-bench-litsearch:  ## Load + embed LitSearch into schema bench_litsearch (needs `make up`)
+bench-litsearch:  ## Load, index (BM25) and embed LitSearch into schema bench_litsearch (needs `make up`)
 	uv run --group bench python -m papergraph.evals.benchmarks.litsearch
-	uv run --group embed python -m papergraph.ingest.embed --schema bench_litsearch
+	uv run python -m papergraph.retrieval.bm25 --schema bench_litsearch
+	uv run --group embed python -m papergraph.ingest.embed --schema bench_litsearch --model bge-small
+	uv run --group embed python -m papergraph.ingest.embed --schema bench_litsearch --model specter2
 
 CONFIG ?= configs/baseline.yaml
 BENCH ?= litsearch
 SPLIT ?= dev
 eval:  ## Run an eval: CONFIG=configs/x.yaml BENCH=litsearch [SPLIT=dev] [LIMIT=50]
-	uv run python -m papergraph.evals.runner --config $(CONFIG) --bench $(BENCH) --split $(SPLIT) $(if $(LIMIT),--limit $(LIMIT))
+	uv run --group embed python -m papergraph.evals.runner --config $(CONFIG) --bench $(BENCH) --split $(SPLIT) $(if $(LIMIT),--limit $(LIMIT))
 
 compare:  ## Paired diff of two runs: A=reports/runs/<a> B=reports/runs/<b>
 	uv run python -m papergraph.evals.compare $(A) $(B)

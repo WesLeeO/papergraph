@@ -86,3 +86,33 @@ def test_committed_configs_load_and_use_known_retrievers() -> None:
     assert paths
     for path in paths:
         assert load_config(path).retriever.kind in RETRIEVERS, path
+
+
+def _git(repo: Path, *args: str) -> None:
+    import subprocess
+
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+
+def test_git_state_ignores_run_outputs_but_not_code(tmp_path: Path) -> None:
+    from papergraph.evals.runner import git_state
+
+    _git(tmp_path, "init", "-q")
+    identity = ["-c", "user.email=t@t", "-c", "user.name=t"]
+    _git(tmp_path, *identity, "commit", "-q", "--allow-empty", "-m", "x")
+    assert git_state(tmp_path)["dirty"] is False
+
+    # Earlier runs' outputs are untracked files, but not code changes.
+    run = tmp_path / "reports" / "runs" / "20261103T000000Z_x"
+    run.mkdir(parents=True)
+    (run / "summary.json").write_text("{}")
+    assert git_state(tmp_path)["dirty"] is False
+
+    # Nor are write-ups next to them.
+    (tmp_path / "reports" / "m4.md").write_text("draft")
+    assert git_state(tmp_path)["dirty"] is False
+
+    (tmp_path / "retriever.py").write_text("print('changed')")
+    state = git_state(tmp_path)
+    assert state["dirty"] is True
+    assert state["dirty_files"] == ["retriever.py"]

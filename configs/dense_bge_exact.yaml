@@ -1,0 +1,10 @@
+# Ablation: dense-bge with exact search (no HNSW index). Measures how much
+# recall the approximate index loses; slow, so not for production.
+name: dense-bge-exact
+retriever:
+  kind: dense
+  params:
+    model: bge-small
+    query_instruction: true
+    exact: true
+depth: 100

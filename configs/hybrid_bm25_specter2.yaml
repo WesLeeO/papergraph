@@ -1,0 +1,13 @@
+# Hybrid: BM25 + dense SPECTER2, fused with RRF (k_rrf = 60, equal weights).
+name: hybrid-bm25-specter2
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+      - kind: bm25
+        params: {k1: 1.2, b: 0.75}
+      - kind: dense
+        params: {model: specter2, ef_search: 100}
+depth: 100

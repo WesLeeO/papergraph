@@ -1,0 +1,9 @@
+# Dense retrieval with SPECTER2 (papers: proximity adapter, queries: ad-hoc
+# query adapter). Needs `make embed MODEL=specter2` for the corpus.
+name: dense-specter2
+retriever:
+  kind: dense
+  params:
+    model: specter2
+    ef_search: 100
+depth: 100
