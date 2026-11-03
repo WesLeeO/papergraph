@@ -1,0 +1,11 @@
+name: baseline-fts
+retriever:
+  kind: pg_fts
+  params: {}
+depth: 100
+recall_ks:
+- 10
+- 20
+- 50
+- 100
+ndcg_k: 10

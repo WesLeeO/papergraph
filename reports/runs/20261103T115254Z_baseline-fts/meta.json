@@ -1,0 +1,15 @@
+{
+  "name": "baseline-fts",
+  "benchmark": "litsearch",
+  "split": "dev",
+  "n_queries": 198,
+  "limit": null,
+  "corpus_schema": "bench_litsearch",
+  "corpus_revision": "9573fb284a1026c998df47024b888a163f0f0e25",
+  "git": {
+    "sha": "b20060c8c16cfc575ca79acd9639df0b04ac7cc3",
+    "dirty": false
+  },
+  "started_at": "2026-11-03T11:52:54.854094+00:00",
+  "duration_s": 113.1
+}

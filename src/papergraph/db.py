@@ -1,5 +1,8 @@
-"""Postgres connection pool shared by the API."""
+"""Postgres connections: a pool for the API, single connections for batch jobs."""
 
+import re
+
+import psycopg
 from psycopg_pool import ConnectionPool
 
 from papergraph.config import get_settings
@@ -19,3 +22,29 @@ def check_database(pool: ConnectionPool) -> bool:
             return row is not None
     except Exception:
         return False
+
+
+# Schema names are spliced into SQL (search_path cannot be a bind parameter), so
+# only plain lowercase identifiers are accepted.
+_SCHEMA_RE = re.compile(r"[a-z_][a-z0-9_]*")
+
+
+def search_path(schema: str) -> str:
+    """The search_path for a corpus namespace: its schema first, then public.
+
+    Unqualified table names resolve to the first schema, so the same SQL reads
+    `bench_litsearch.papers` or `public.papers` depending on the connection.
+    public stays on the path for the pgvector extension's `vector` type.
+    """
+    if not _SCHEMA_RE.fullmatch(schema):
+        raise ValueError(f"invalid schema name: {schema!r}")
+    return "public" if schema == "public" else f"{schema}, public"
+
+
+def connect(schema: str = "public", *, autocommit: bool = False) -> psycopg.Connection:
+    """A connection whose unqualified table names resolve inside `schema`."""
+    return psycopg.connect(
+        get_settings().database_url,
+        autocommit=autocommit,
+        options=f"-c search_path={search_path(schema).replace(' ', '')}",
+    )
