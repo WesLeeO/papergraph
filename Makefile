@@ -1,4 +1,4 @@
-.PHONY: help install up down logs ps nuke migrate ingest psql test lint format check
+.PHONY: help install up down logs ps nuke migrate ingest embed psql test lint format check
 
 help:  ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -27,6 +27,9 @@ migrate:  ## Apply pending database migrations (inside the api image)
 LIMIT ?=
 ingest:  ## Load arXiv ML papers into Postgres (LIMIT=5000 for a quick run)
 	docker compose run --rm --build ingest python -m papergraph.ingest.load $(if $(LIMIT),--limit $(LIMIT))
+
+embed:  ## Embed papers on the host GPU (needs `make up`; LIMIT=5000 for a quick run)
+	uv run --group embed python -m papergraph.ingest.embed $(if $(LIMIT),--limit $(LIMIT))
 
 psql:  ## Open a SQL shell on the database
 	docker compose exec db psql -U papergraph

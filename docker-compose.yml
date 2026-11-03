@@ -3,6 +3,10 @@ name: papergraph
 services:
   db:
     image: pgvector/pgvector:pg16
+    # Parallel index builds share maintenance_work_mem through /dev/shm. Docker's
+    # 64 MB default makes the HNSW build fail ("could not resize shared memory
+    # segment"), so leave room for the 2 GB that `make embed` asks for.
+    shm_size: 3gb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-papergraph}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-papergraph}
