@@ -61,8 +61,11 @@ class Encoder(Protocol):
 
 
 def device() -> str:
+    """Best available accelerator: NVIDIA GPU (cuda), Apple GPU (mps), else CPU."""
     import torch
 
+    if torch.cuda.is_available():
+        return "cuda"
     return "mps" if torch.backends.mps.is_available() else "cpu"
 
 

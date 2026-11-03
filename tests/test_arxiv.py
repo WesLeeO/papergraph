@@ -1,7 +1,9 @@
+import json
 from datetime import date
+from pathlib import Path
 from typing import Any
 
-from papergraph.ingest.arxiv import clean_text, parse_record
+from papergraph.ingest.arxiv import clean_text, iter_papers, parse_record
 
 
 def record(**overrides: Any) -> dict[str, Any]:
@@ -64,3 +66,18 @@ def test_author_suffix_is_kept() -> None:
 
 def test_clean_text() -> None:
     assert clean_text("  a\n  b\tc  ") == "a b c"
+
+
+def test_iter_papers_from_year_keeps_recent_papers(tmp_path: Path) -> None:
+    def v1(created: str) -> list[dict[str, str]]:
+        return [{"version": "v1", "created": created}]
+
+    rows = [
+        record(id="old", versions=v1("Mon, 12 Jun 2017 17:57:34 GMT")),
+        record(id="physics", categories="hep-ph", versions=v1("Tue, 03 Feb 2026 10:00:00 GMT")),
+        record(id="new", versions=v1("Tue, 03 Feb 2026 10:00:00 GMT")),
+    ]
+    path = tmp_path / "snapshot.json"
+    path.write_text("\n".join(json.dumps(r) for r in rows))
+    assert [p.id for p in iter_papers(path)] == ["old", "new"]
+    assert [p.id for p in iter_papers(path, from_year=2026)] == ["new"]

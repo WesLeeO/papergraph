@@ -1,7 +1,37 @@
-.PHONY: help install up down logs ps nuke migrate ingest embed bench-litsearch eval compare psql test lint format check
+.PHONY: help setup data doctor agent-model install up down logs ps nuke migrate ingest embed bench-litsearch eval compare serve agent psql test lint format check
 
 help:  ## Show available commands
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
+
+# --- Getting started -------------------------------------------------------------
+
+DATA_FILE := data/raw/arxiv-metadata-oai-snapshot.json
+FROM_YEAR ?= 2026
+
+setup:  ## One command: database + papers + indexes (FROM_YEAR=2026 by default; FROM_YEAR= for all)
+	@test -f .env || (cp .env.example .env && echo "created .env from .env.example")
+	@test -f $(DATA_FILE) || (echo "Missing $(DATA_FILE): run 'make data' or see README (Get the data)." && exit 1)
+	docker compose up -d --wait db
+	uv sync --group embed
+	uv run python -m papergraph.migrate
+	uv run python -m papergraph.ingest.load $(if $(FROM_YEAR),--from-year $(FROM_YEAR))
+	uv run python -m papergraph.retrieval.bm25
+	uv run --group embed python -m papergraph.ingest.embed
+	@command -v ollama >/dev/null && $(MAKE) agent-model || echo "Ollama not found: search works; install Ollama for the research agent (see README)."
+	@echo "Setup done. Start the app with: make serve  ->  http://localhost:8080"
+
+# --with six: the kaggle CLI imports `six` without declaring it as a dependency.
+data:  ## Download the arXiv metadata snapshot from Kaggle (1.75 GB zip, ~5 GB unzipped)
+	@if [ -f $(DATA_FILE) ]; then echo "already have $(DATA_FILE)"; else \
+	  mkdir -p data/raw && uvx --with six kaggle datasets download -d Cornell-University/arxiv -p data/raw --unzip; fi
+
+doctor:  ## Check prerequisites and setup progress, with fixes for anything missing
+	uv run python -m papergraph.doctor
+
+agent-model:  ## Download the research agent's local model (Qwen3 8B, ~5 GB) into Ollama
+	ollama pull qwen3:8b
+
+# --- Development -------------------------------------------------------------------
 
 install:  ## Install Python deps locally (incl. dev tools)
 	uv sync
@@ -46,6 +76,13 @@ eval:  ## Run an eval: CONFIG=configs/x.yaml BENCH=litsearch [SPLIT=dev] [LIMIT=
 
 compare:  ## Paired diff of two runs: A=reports/runs/<a> B=reports/runs/<b>
 	uv run python -m papergraph.evals.compare $(A) $(B)
+
+serve:  ## Web UI + API on the host (Mac GPU) at http://localhost:8080; needs `make up` and `ollama serve`
+	PAPERGRAPH_WARMUP=1 uv run --group embed uvicorn papergraph.api.main:app --host 127.0.0.1 --port 8080
+
+Q ?=
+agent:  ## Research agent in the terminal: make agent Q="your question"
+	uv run --group embed python -m papergraph.agent "$(Q)"
 
 psql:  ## Open a SQL shell on the database
 	docker compose exec db psql -U papergraph

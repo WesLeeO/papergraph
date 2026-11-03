@@ -104,13 +104,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--path", type=Path, default=DEFAULT_PATH)
     parser.add_argument("--limit", type=int, default=None, help="stop after N ML papers")
+    parser.add_argument(
+        "--from-year",
+        type=int,
+        default=None,
+        help="only papers first published in this year or later",
+    )
     parser.add_argument("--batch-size", type=int, default=5000)
     args = parser.parse_args()
 
     start = time.perf_counter()
     total = with_venue = 0
     with psycopg.connect(get_settings().database_url) as conn:
-        for batch in _batches(iter_papers(args.path, args.limit), args.batch_size):
+        papers = iter_papers(args.path, args.limit, from_year=args.from_year)
+        for batch in _batches(papers, args.batch_size):
             load_batch(conn, batch)
             total += len(batch)
             with_venue += sum(p.venue is not None for p in batch)

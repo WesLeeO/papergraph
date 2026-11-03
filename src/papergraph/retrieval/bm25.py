@@ -22,10 +22,13 @@ import argparse
 import math
 import time
 from collections.abc import Iterable, Mapping
+from typing import Any
 
 import psycopg
+from psycopg import sql
 
 from papergraph.db import connect
+from papergraph.retrieval.filters import Filters, filter_sql
 
 K1 = 1.2
 B = 0.75
@@ -87,6 +90,8 @@ TRUNCATE bm25_postings, bm25_terms, bm25_stats;
 
 -- unnest(tsvector) gives one row per (paper, stem) with the stem's positions and
 -- their weights: 'A' = title, 'B' = abstract (see papers.search_tsv).
+-- Inserted in term order so each term's postings are contiguous on disk: a
+-- query then reads a few pages per term instead of one page per posting.
 INSERT INTO bm25_postings (term, paper_id, tf_title, tf_body, len_title, len_body)
 WITH tf AS (
     SELECT p.id, u.lexeme,
@@ -96,7 +101,8 @@ WITH tf AS (
 )
 SELECT lexeme, id, tf_title, tf_body,
        sum(tf_title) OVER (PARTITION BY id), sum(tf_body) OVER (PARTITION BY id)
-FROM tf;
+FROM tf
+ORDER BY lexeme, id;
 
 INSERT INTO bm25_terms (term, df)
 SELECT term, count(*) FROM bm25_postings GROUP BY term;
@@ -124,12 +130,20 @@ def build_index(conn: psycopg.Connection) -> None:
 # --- search -------------------------------------------------------------------
 
 _SEARCH = """
-WITH q AS (
-    -- Distinct stems of the query, from the same tokenizer as the index.
-    SELECT unnest(tsvector_to_array(to_tsvector('english', %(q)s))) AS term
-),
-s AS (
+WITH s AS (
     SELECT n_docs, %(boost)s * avg_len_title + avg_len_body AS avg_len FROM bm25_stats
+),
+q_all AS (
+    -- Distinct stems of the query, from the same tokenizer as the index.
+    SELECT t.term, t.df, row_number() OVER (ORDER BY t.df) AS rarity
+    FROM unnest(tsvector_to_array(to_tsvector('english', %(q)s))) AS u(term)
+    JOIN bm25_terms t ON t.term = u.term
+),
+q AS (
+    -- Query-term pruning: skip very common terms (low IDF, huge posting
+    -- lists), but always keep the two rarest so no query ends up empty.
+    SELECT q_all.term FROM q_all, s
+    WHERE q_all.rarity <= 2 OR q_all.df <= %(max_df)s * s.n_docs
 ),
 m AS (
     SELECT p.paper_id,
@@ -141,6 +155,7 @@ m AS (
     JOIN bm25_terms t USING (term)
     JOIN bm25_postings p USING (term)
     CROSS JOIN s
+    {filter_join}
 )
 SELECT paper_id
 FROM m
@@ -159,10 +174,30 @@ def search(
     k1: float = K1,
     b: float = B,
     title_boost: float = 1.0,
+    filters: Filters | None = None,
+    max_df: float = 1.0,
 ) -> list[str]:
-    """Top-k paper ids by BM25. Papers sharing no stem with the query are never returned."""
-    params = {"q": query, "k": k, "k1": k1, "b": b, "boost": title_boost}
-    return [row[0] for row in conn.execute(_SEARCH, params)]
+    """Top-k paper ids by BM25. Papers sharing no stem with the query are never returned.
+
+    max_df: skip query terms found in more than this fraction of papers (the
+    two rarest terms are always kept). 1.0 = exact BM25; ~0.1 trades a little
+    precision for speed on large corpora, where common terms dominate the work.
+    """
+    params: dict[str, Any] = {
+        "q": query,
+        "k": k,
+        "k1": k1,
+        "b": b,
+        "boost": title_boost,
+        "max_df": max_df,
+    }
+    filter_join: sql.Composable = sql.SQL("")
+    if filters is not None and not filters.empty:
+        condition, filter_params = filter_sql(filters, "pp")
+        filter_join = sql.SQL("JOIN papers pp ON pp.id = p.paper_id WHERE {}").format(condition)
+        params.update(filter_params)
+    statement = sql.SQL(_SEARCH).format(filter_join=filter_join)
+    return [row[0] for row in conn.execute(statement, params)]
 
 
 def main() -> None:

@@ -35,6 +35,12 @@ goal.
 2. **Grounded explanations:** 1–2 sentences per top result on why it matches,
    citing only the abstract.
 
+3. **Research agent (agentic RAG):** a research question goes in; a local open
+   model (Qwen3 via Ollama, free) plans searches over the index, reads results,
+   searches again, and returns an answer citing only papers it retrieved.
+   Tools: local search (with filters), paper lookup, similar papers, live arXiv
+   API for preprints newer than the snapshot. Agent loop written by hand.
+
 Deferred (not core): seed-paper recommendations, daily arXiv updates.
 Cut: full-text deep-dive Q&A, citation graph.
 
@@ -199,6 +205,11 @@ A milestone is done only when its eval or test evidence exists.
 7. **Graph:** author and kNN edges, 1-hop and PPR expansion; entity edges as an experiment.
 8. **Explanations:** grounded explanations, LLM judge, judge calibration.
 9. **Ops:** search API + UI, tracing, cost and latency reporting, CI eval gate.
+   Done (2026-11-03): web UI + API (`make serve`) with search and a streaming
+   research agent; BM25 query-term pruning (max_df 0.1) for the 581k corpus.
+   Left: tracing, cost/latency reporting, CI eval gate, API in Docker.
+9b. **Research agent eval:** agent vs the single-shot pipeline on LitSearch dev
+   (Recall of its cited papers, steps, latency); local Qwen3 vs larger models.
 10. **Final report:** `REPORT.md` with test-split numbers, CIs, ablations, and
     failure analysis.
 
