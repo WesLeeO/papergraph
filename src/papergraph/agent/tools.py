@@ -85,10 +85,26 @@ _ATOM = {"a": "http://www.w3.org/2005/Atom"}
 _last_arxiv_call = 0.0
 
 
+# Words in nearly every ML abstract: requiring them (AND) adds no precision,
+# and with results sorted by date it lets loosely related papers through.
+GENERIC = frozenset(
+    {
+        "the", "and", "for", "with", "via", "from", "using", "based", "towards", "toward",
+        "into", "large", "language", "model", "models", "learning", "deep", "neural",
+        "network", "networks", "approach", "method", "methods", "paper", "study", "new",
+    }
+)  # fmt: skip
+
+
 def arxiv_query(text: str) -> str:
-    """'sparse attention for long docs' -> 'all:sparse AND all:attention AND ...'."""
-    words = [w for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]+", text) if len(w) > 2][:6]
-    return " AND ".join(f"all:{w}" for w in words)
+    """'speculative decoding for large language models' -> 'all:speculative AND all:decoding'.
+
+    Distinctive words only (generic ones are dropped unless nothing else is
+    left), at most six, all required.
+    """
+    words = [w for w in re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]+", text) if len(w) > 2]
+    distinctive = [w for w in words if w.lower() not in GENERIC] or words
+    return " AND ".join(f"all:{w}" for w in distinctive[:6])
 
 
 def parse_arxiv_feed(xml_text: str) -> list[Paper]:
@@ -194,6 +210,41 @@ class Toolbox:
             return ToolResult(f"No embedding for paper {paper_id!r}; try search_papers instead.")
         return ToolResult(format_papers(papers), papers)
 
+    def papers_by_author(
+        self,
+        name: str,
+        query: Any = None,
+        year_from: Any = None,
+        year_to: Any = None,
+        k: Any = 10,
+    ) -> ToolResult:
+        filters = Filters(
+            year_from=clamp(year_from, 1990, 2100, 0) or None,
+            year_to=clamp(year_to, 1990, 2100, 0) or None,
+        )
+        variants, papers = svc.author_papers(
+            self.conn,
+            str(name),
+            query=str(query) if query else None,
+            k=clamp(k, 1, 20, 10),
+            filters=filters,
+        )
+        if not variants:
+            return ToolResult(
+                f"No author matching {name!r} in the index. Check the spelling, or try the "
+                "surname alone."
+            )
+        names = ", ".join(f"{n} ({c} papers)" for n, c in variants)
+        order = f"ranked by relevance to {query!r}" if query else "newest first"
+        years = ""
+        if filters.year_from or filters.year_to:
+            years = f", published {filters.year_from or '...'}-{filters.year_to or 'now'}"
+        header = (
+            f"ALL {len(papers)} papers below are co-authored by {name} "
+            f"(name spellings found: {names}){years}, {order}:"
+        )
+        return ToolResult(header + "\n" + format_papers(papers), papers)
+
     def search_arxiv(self, query: str, max_results: Any = 5) -> ToolResult:
         papers = fetch_arxiv(str(query), clamp(max_results, 1, 10, 5), self.http)
         return ToolResult(format_papers(papers), papers)
@@ -220,6 +271,27 @@ class Toolbox:
                     "required": ["query"],
                 },
                 self.search_papers,
+            ),
+            Tool(
+                "papers_by_author",
+                "Papers written by a given person (all spellings of the name). Use this for "
+                "any question about a specific author; search_papers does NOT search author "
+                "names. Optionally rank the author's papers by a topic.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "e.g. 'Yann LeCun'"},
+                        "query": {
+                            "type": "string",
+                            "description": "optional topic to rank their papers by",
+                        },
+                        "year_from": {"type": "integer"},
+                        "year_to": {"type": "integer"},
+                        "k": {"type": "integer", "description": "number of results (max 20)"},
+                    },
+                    "required": ["name"],
+                },
+                self.papers_by_author,
             ),
             Tool(
                 "get_paper",

@@ -26,14 +26,15 @@ from papergraph.agent.llm import LLMError, Reply
 from papergraph.agent.tools import ToolResult
 from papergraph.search import Paper
 
-PROMPT_VERSION = "agent_system_v1"
+PROMPT_VERSION = "agent_system_v2"  # v2: adds papers_by_author
 PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 MAX_STEPS = 6
-MIN_SEARCHES = 2  # small models tend to stop after one search; nudge them once
+MIN_SEARCHES = 2  # small models tend to stop after one search; nudge them once...
+MIN_CITATIONS = 3  # ...but only if the answer is thin (fewer verified citations)
 NUDGE = (
-    "Before answering: you have run only one search. Questions usually have "
-    "several aspects. Search for the aspects your results do not cover yet "
-    "(use different, specific queries), then answer."
+    "Before answering: you have made only one tool call. If the question has "
+    "aspects your results do not cover yet, look them up with different, "
+    "specific queries; if it is fully answered, give your final answer now."
 )
 
 
@@ -87,7 +88,11 @@ def run_agent(
     seen_calls: set[str] = set()
     n_calls = 0
     nudged = False
+    pre_nudge: Reply | None = None  # kept in case the nudged answer is worse
     start = time.perf_counter()
+
+    def verified(reply: Reply) -> list[str]:
+        return [i for i in cited_ids(reply.content) if i in seen_papers]
 
     def final(reply: Reply, steps: int) -> Event:
         ids = cited_ids(reply.content)
@@ -97,7 +102,7 @@ def run_agent(
                 "answer": reply.content,
                 "papers": [seen_papers[i].to_dict() for i in ids if i in seen_papers],
                 "unverified_ids": [i for i in ids if i not in seen_papers],
-                "steps": steps,
+                "steps": n_calls,  # tool calls made, not loop iterations
                 "seconds": round(time.perf_counter() - start, 1),
                 "prompt_version": PROMPT_VERSION,
             },
@@ -113,11 +118,14 @@ def run_agent(
             yield Event("thinking", {"step": step, "text": reply.thinking})
         messages.append(reply.as_message())
         if not reply.tool_calls:
-            if n_calls < min_searches and not nudged and step < max_steps:
-                nudged = True  # once: if it still answers, accept the answer
+            thin = len(verified(reply)) < MIN_CITATIONS
+            if n_calls < min_searches and thin and not nudged and step < max_steps:
+                nudged, pre_nudge = True, reply  # once: the next answer is accepted
                 yield Event("nudge", {"step": step, "message": NUDGE})
                 messages.append({"role": "user", "content": NUDGE})
                 continue
+            if pre_nudge is not None and len(verified(pre_nudge)) > len(verified(reply)):
+                reply = pre_nudge  # the nudge made the answer worse: keep the first one
             yield final(reply, step - 1)
             return
         for call in reply.tool_calls:
