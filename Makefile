@@ -31,15 +31,16 @@ ingest:  ## Load arXiv ML papers into Postgres (LIMIT=5000 for a quick run)
 embed:  ## Embed papers on the host GPU (needs `make up`; LIMIT=5000 for a quick run)
 	uv run --group embed python -m papergraph.ingest.embed $(if $(LIMIT),--limit $(LIMIT))
 
-bench-litsearch:  ## Load + embed LitSearch into schema bench_litsearch (needs `make up`)
+bench-litsearch:  ## Load, index (BM25) and embed LitSearch into schema bench_litsearch (needs `make up`)
 	uv run --group bench python -m papergraph.evals.benchmarks.litsearch
+	uv run python -m papergraph.retrieval.bm25 --schema bench_litsearch
 	uv run --group embed python -m papergraph.ingest.embed --schema bench_litsearch
 
 CONFIG ?= configs/baseline.yaml
 BENCH ?= litsearch
 SPLIT ?= dev
 eval:  ## Run an eval: CONFIG=configs/x.yaml BENCH=litsearch [SPLIT=dev] [LIMIT=50]
-	uv run python -m papergraph.evals.runner --config $(CONFIG) --bench $(BENCH) --split $(SPLIT) $(if $(LIMIT),--limit $(LIMIT))
+	uv run --group embed python -m papergraph.evals.runner --config $(CONFIG) --bench $(BENCH) --split $(SPLIT) $(if $(LIMIT),--limit $(LIMIT))
 
 compare:  ## Paired diff of two runs: A=reports/runs/<a> B=reports/runs/<b>
 	uv run python -m papergraph.evals.compare $(A) $(B)

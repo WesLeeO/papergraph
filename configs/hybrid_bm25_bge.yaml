@@ -1,0 +1,14 @@
+# Hybrid: BM25 + dense bge-small, fused with RRF (k_rrf = 60, equal weights).
+# Each sub-retriever returns `candidates` papers; RRF keeps the top `depth`.
+name: hybrid-bm25-bge
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+      - kind: bm25
+        params: {k1: 1.2, b: 0.75}
+      - kind: dense
+        params: {model: bge-small, query_instruction: true, ef_search: 100}
+depth: 100

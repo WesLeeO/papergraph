@@ -1,0 +1,10 @@
+# BM25 over our Postgres inverted index (papergraph.retrieval.bm25), standard
+# Lucene defaults. Needs the index: python -m papergraph.retrieval.bm25 --schema <corpus>
+name: bm25
+retriever:
+  kind: bm25
+  params:
+    k1: 1.2
+    b: 0.75
+    title_boost: 1.0
+depth: 100

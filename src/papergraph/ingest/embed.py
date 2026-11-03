@@ -26,6 +26,9 @@ _MISSING = f"""
 SELECT p.id, p.title, p.abstract
 FROM papers p
 WHERE NOT EXISTS (SELECT 1 FROM {TABLE} e WHERE e.paper_id = p.id)
+  -- A paper with no text would get the embedding of "", identical for all of
+  -- them, which dense search could then return as a block of junk.
+  AND (p.title <> '' OR p.abstract <> '')
 -- Newest first: a partial run (LIMIT, or stopped early) covers recent papers,
 -- which matter most for search. Ordering by id alone would be oldest first,
 -- since new-style arXiv ids start with YYMM. id breaks ties within a day.

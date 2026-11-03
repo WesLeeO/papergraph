@@ -17,7 +17,7 @@ import json
 import subprocess
 import time
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,11 +32,12 @@ from papergraph.evals.benchmarks import get_benchmark
 from papergraph.evals.config import RunConfig, load_config
 from papergraph.evals.metrics import ndcg_at_k, recall_at_k, reciprocal_rank
 from papergraph.evals.stats import bootstrap_ci
+from papergraph.retrieval.registry import RETRIEVERS as CORE_RETRIEVERS
+from papergraph.retrieval.registry import Retriever
 
-Retriever = Callable[..., list[str]]  # (conn, query, k, **params) -> paper ids
-
-# Config `retriever.kind` -> function. Milestone 4 adds bm25, dense, hybrid here.
-RETRIEVERS: dict[str, Retriever] = {"pg_fts": pg_fts}
+# Config `retriever.kind` -> function: the product retrievers plus the
+# eval-only reference baseline.
+RETRIEVERS: dict[str, Retriever] = {"pg_fts": pg_fts, **CORE_RETRIEVERS}
 
 RUNS_DIR = Path("reports/runs")
 
