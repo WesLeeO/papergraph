@@ -4,9 +4,10 @@
 agent dig through them for you. Runs entirely on your own computer, for free.**
 
 - **Search.** Describe what you're interested in, in plain language ("making
-  LLM inference faster with quantization"), and get ranked papers from arXiv's
-  machine-learning categories. Filter by year, venue (NeurIPS, ICLR, ACL, CVPR,
-  …) and category.
+  LLM inference faster with quantization"), and scroll through ranked papers
+  from arXiv's machine-learning categories (results keep loading as you
+  scroll). Filter by author, year, venue (NeurIPS, ICLR, ACL, CVPR, …) and
+  category.
 - **Research agent.** Ask a research question. A local AI model plans
   searches, reads the results, searches again where something is missing, and
   writes an answer with a reading list. It may only cite papers it actually
@@ -106,8 +107,9 @@ step continues where it left off.
 make serve
 ```
 
-Open **http://localhost:8080**. The first search takes a few extra seconds
-while the models load.
+Open **http://localhost:8080**. Type an interest and press **Search**; open
+**Filters** to search by author, year, venue or category. The first search
+takes a few extra seconds while the models load.
 
 ### 5. The research agent (optional)
 
@@ -119,7 +121,7 @@ ollama serve          # skip if the Ollama app is already running
 make agent-model      # downloads Qwen3 8B (~5 GB), once
 ```
 
-Reload the page and open the *Research agent* tab. A research question takes
+Reload the page, type a question and press **Ask agent**. A research question takes
 roughly 30 seconds to 3 minutes, depending on your hardware. You can also use
 it from the terminal:
 
@@ -175,7 +177,7 @@ Details: [`reports/m4/`](reports/m4/README.md) (search) and
 | `Cannot connect to the Docker daemon` | Start Docker Desktop and wait until it says it is running |
 | Port 5432 is already in use | You probably run Postgres locally. In `.env`, set `DB_PORT=5433` and change `localhost:5432` to `localhost:5433` in `DATABASE_URL` |
 | Port 8080 is already in use | Run `uv run --group embed uvicorn papergraph.api.main:app --port 8090` and open port 8090 |
-| "Research agent unavailable" | Start Ollama (`ollama serve`) and run `make agent-model`, then reload the page |
+| "Agent unavailable" next to the search box | Start Ollama (`ollama serve`) and run `make agent-model`, then reload the page |
 | Embedding is very slow | Without a GPU it runs on CPU. Use quick mode, or let it run: it resumes if interrupted |
 | Anything else | Run `make doctor` |
 
@@ -187,6 +189,7 @@ To stop everything: `Ctrl+C` in the `make serve` terminal, then `make down`
 ```bash
 make check     # lint + type check + tests (no database, GPU or network needed)
 make help      # every command
+PAPERGRAPH_LIVE=1 uv run --group embed pytest tests/integration   # edge cases against your real database
 ```
 
 The evaluation harness (`make bench-litsearch`, `make eval`, `make compare`),
