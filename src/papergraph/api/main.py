@@ -77,7 +77,9 @@ def ready(request: Request, response: Response) -> dict[str, str]:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
+    # no-cache: browsers revalidate on each visit, so an updated page shows up
+    # right away instead of a stale cached copy (cheap: it's one small file).
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 def split_csv(value: str) -> tuple[str, ...]:
@@ -93,7 +95,8 @@ def make_filters(
 @app.get("/api/search")
 def api_search(
     request: Request,
-    q: Annotated[str, Query(min_length=1, max_length=500)],
+    q: Annotated[str, Query(max_length=500)] = "",
+    author: Annotated[str, Query(max_length=200)] = "",
     k: Annotated[int, Query(ge=1, le=50)] = 10,
     year_from: int | None = None,
     year_to: int | None = None,
@@ -101,12 +104,24 @@ def api_search(
     categories: str = "",
     rerank: bool = True,
 ) -> dict[str, Any]:
+    """Papers for an interest (q), or by an author (optionally ranked by q)."""
+    if not q.strip() and not author.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "give q, author, or both")
     filters = make_filters(year_from, year_to, venues, categories)
     start = time.perf_counter()
+    matched: list[dict[str, Any]] = []
     with request.app.state.pool.connection() as conn:
-        papers = svc.search(conn, q, k=k, filters=filters, rerank=rerank)
+        if author.strip():
+            variants, papers = svc.author_papers(
+                conn, author, query=q or None, k=k, filters=filters
+            )
+            matched = [{"name": n, "papers": c} for n, c in variants]
+        else:
+            papers = svc.search(conn, q, k=k, filters=filters, rerank=rerank)
     return {
         "query": q,
+        "author": author,
+        "matched_authors": matched,
         "papers": [p.to_dict() for p in papers],
         "ms": round((time.perf_counter() - start) * 1000),
     }

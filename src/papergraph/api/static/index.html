@@ -88,11 +88,12 @@
   <section id="tab-search">
     <div class="panel">
       <form id="search-form" class="row">
-        <input type="text" id="q" placeholder="Describe your interest, e.g. contrastive learning for medical images" autocomplete="off" required>
+        <input type="text" id="q" placeholder="Describe your interest, e.g. contrastive learning for medical images" autocomplete="off">
         <button class="go" id="search-btn">Search</button>
       </form>
       <div class="filters">
         <div class="row" style="align-items:center">
+          <div style="flex:1; min-width:220px"><div class="label">Author (optional)</div><input type="text" id="author" placeholder="e.g. Yann LeCun" autocomplete="off" style="width:100%"></div>
           <div><div class="label">From year</div><input type="number" id="year-from" min="1990" max="2100" placeholder="any"></div>
           <div><div class="label">To year</div><input type="number" id="year-to" min="1990" max="2100" placeholder="any"></div>
         </div>
@@ -179,11 +180,16 @@ fetch("/api/meta").then((r) => r.json()).then((m) => {
 }).catch(() => { $("tagline").textContent = "Database unavailable"; });
 
 // ---------- search ----------
+// The filter fields sit outside the <form>: make Enter in any of them search too.
+["author", "year-from", "year-to"].forEach((id) => $(id).addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("search-form").requestSubmit(); }
+}));
 $("search-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const q = $("q").value.trim();
-  if (!q) return;
+  const q = $("q").value.trim(), author = $("author").value.trim();
+  if (!q && !author) return;
   const params = new URLSearchParams({ q, k: 15 });
+  if (author) params.set("author", author);
   if ($("year-from").value) params.set("year_from", $("year-from").value);
   if ($("year-to").value) params.set("year_to", $("year-to").value);
   if (selected.venues.size) params.set("venues", [...selected.venues].join(","));
@@ -195,7 +201,14 @@ $("search-form").addEventListener("submit", async (e) => {
     const r = await fetch("/api/search?" + params);
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     const data = await r.json();
-    $("search-meta").textContent = `${data.papers.length} papers · ${data.ms} ms · hybrid BM25 + dense retrieval, cross-encoder reranking`;
+    if (data.author) {
+      const names = data.matched_authors.map((a) => `${a.name} (${a.papers})`).join(", ");
+      $("search-meta").textContent = data.matched_authors.length
+        ? `${data.papers.length} papers by ${names} · ${data.query ? "ranked by relevance" : "newest first"} · ${data.ms} ms`
+        : `No author matching "${data.author}". Check the spelling or try the surname alone.`;
+    } else {
+      $("search-meta").textContent = `${data.papers.length} papers · ${data.ms} ms · hybrid BM25 + dense retrieval, cross-encoder reranking`;
+    }
     data.papers.forEach((p, i) => $("results").appendChild(paperCard(p, i + 1)));
     if (!data.papers.length) $("search-meta").textContent = "No papers found. Try fewer filters.";
   } catch (err) {

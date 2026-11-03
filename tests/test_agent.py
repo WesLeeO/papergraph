@@ -86,6 +86,29 @@ def test_nudge_happens_only_once() -> None:
     assert evs[-1].data["answer"] == "still early"  # accepted the second time
 
 
+def test_well_cited_answer_after_one_search_is_not_nudged() -> None:
+    answer = "See [2401.00001] and [2401.00002] and [2401.00001]."  # 2 distinct verified ids
+    model = FakeModel([search_call(), Reply(answer), Reply(answer)])
+    evs = list(run_agent("q", model, FakeTools(), min_searches=2))
+    assert "nudge" in [e.type for e in evs]  # 2 < MIN_CITATIONS: still thin
+
+    class ThreePapers(FakeTools):
+        def run(self, name: str, arguments: dict[str, Any]) -> ToolResult:
+            return ToolResult("...", [paper("a.1"), paper("a.2"), paper("a.3")])
+
+    model = FakeModel([search_call(), Reply("[a.1] [a.2] [a.3]")])
+    evs = list(run_agent("q", model, ThreePapers()))
+    assert "nudge" not in [e.type for e in evs]
+    assert evs[-1].data["answer"] == "[a.1] [a.2] [a.3]"
+
+
+def test_nudge_that_makes_the_answer_worse_is_undone() -> None:
+    first = Reply("Read [2401.00001].")
+    model = FakeModel([search_call(), first, Reply("I have fully answered the question.")])
+    evs = list(run_agent("q", model, FakeTools()))
+    assert evs[-1].data["answer"] == "Read [2401.00001]."
+
+
 def test_repeated_call_is_not_rerun() -> None:
     model = FakeModel([search_call(), search_call(), Reply("done")])
     tools = FakeTools()
@@ -137,7 +160,13 @@ def test_tool_exceptions_become_text() -> None:
 def test_specs_are_valid_function_schemas() -> None:
     specs = toolbox().specs()
     names = {s["function"]["name"] for s in specs}
-    assert names == {"search_papers", "get_paper", "similar_papers", "search_arxiv"}
+    assert names == {
+        "search_papers",
+        "papers_by_author",
+        "get_paper",
+        "similar_papers",
+        "search_arxiv",
+    }
     for s in specs:
         assert s["type"] == "function"
         assert s["function"]["parameters"]["type"] == "object"
@@ -152,10 +181,17 @@ def test_argument_coercion() -> None:
     assert as_list(None) == ()
 
 
-def test_arxiv_query_uses_key_terms() -> None:
-    assert arxiv_query("sparse attention for long documents") == (
-        "all:sparse AND all:attention AND all:for AND all:long AND all:documents"
+def test_arxiv_query_keeps_distinctive_terms() -> None:
+    assert arxiv_query("speculative decoding for large language models") == (
+        "all:speculative AND all:decoding"
     )
+    assert arxiv_query("sparse attention for long documents") == (
+        "all:sparse AND all:attention AND all:long AND all:documents"
+    )
+
+
+def test_arxiv_query_falls_back_to_generic_words() -> None:
+    assert arxiv_query("large language models") == "all:large AND all:language AND all:models"
 
 
 ATOM = """<?xml version="1.0" encoding="UTF-8"?>
