@@ -6,9 +6,12 @@ pgvector for the nearest vectors by cosine distance (`<=>`), served by the
 HNSW index: approximate, but milliseconds instead of a scan of every vector.
 
 Knobs (all in the config's retriever.params):
+- model: bge-small or specter2 (papergraph.encoders); paper vectors must
+  have been built with the same model (`make embed MODEL=...`).
 - query_instruction: BGE models were trained with a prefix on short queries
   ("Represent this sentence for searching relevant passages: "). Whether it
-  helps on LitSearch's long questions is an empirical question.
+  helps on LitSearch's long questions is an empirical question. No effect for
+  models without an instruction (specter2 uses a query adapter instead).
 - ef_search: how many candidates HNSW keeps while searching. Higher = closer
   to exact search, slower. pgvector returns at most ef_search rows, so it is
   always raised to at least k.
@@ -19,41 +22,13 @@ The model is loaded lazily on first use: importing this module (as the eval
 runner and the tests do) doesn't need torch.
 """
 
-from dataclasses import dataclass
-from functools import lru_cache
-from typing import TYPE_CHECKING
-
 import psycopg
 from psycopg import sql
 
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
+from papergraph.encoders import EmbeddingModel, get_encoder, get_model
 
 
-@dataclass(frozen=True)
-class DenseModel:
-    hf_name: str
-    table: str  # vectors written by papergraph.ingest.embed
-    query_instruction: str  # prefix the model expects on retrieval queries ("" = none)
-
-
-MODELS = {
-    "bge-small": DenseModel(
-        hf_name="BAAI/bge-small-en-v1.5",
-        table="paper_embeddings_bge_small",
-        query_instruction="Represent this sentence for searching relevant passages: ",
-    ),
-}
-
-
-def get_model(name: str) -> DenseModel:
-    try:
-        return MODELS[name]
-    except KeyError:
-        raise ValueError(f"unknown dense model {name!r}; known: {sorted(MODELS)}") from None
-
-
-def query_text(query: str, model: DenseModel, use_instruction: bool) -> str:
+def query_text(query: str, model: EmbeddingModel, use_instruction: bool) -> str:
     """The exact string embedded for a query."""
     query = query.strip()
     return model.query_instruction + query if use_instruction else query
@@ -71,21 +46,6 @@ def effective_ef_search(k: int, ef_search: int) -> int:
     return max(k, ef_search)
 
 
-@lru_cache(maxsize=4)
-def _encoder(hf_name: str) -> "SentenceTransformer":
-    import torch
-    from sentence_transformers import SentenceTransformer
-
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    return SentenceTransformer(hf_name, device=device)
-
-
-def embed_query(text: str, model: DenseModel) -> list[float]:
-    # normalize_embeddings=True, like the paper vectors: cosine = dot product.
-    vec = _encoder(model.hf_name).encode(text, normalize_embeddings=True)
-    return [float(x) for x in vec]
-
-
 def search(
     conn: psycopg.Connection,
     query: str,
@@ -99,7 +59,7 @@ def search(
     if not query.strip():
         return []
     m = get_model(model)
-    vec = vector_literal(embed_query(query_text(query, m, query_instruction), m))
+    vec = vector_literal(get_encoder(m.name).encode_query(query_text(query, m, query_instruction)))
     statement = sql.SQL(
         "SELECT paper_id FROM {table} ORDER BY embedding <=> %s::vector LIMIT %s"
     ).format(table=sql.Identifier(m.table))

@@ -1,4 +1,7 @@
-"""Embed papers with bge-small and store the vectors. Run with `make embed [LIMIT=...]`.
+"""Embed papers and store the vectors. Run with `make embed [MODEL=specter2] [LIMIT=...]`.
+
+The model (bge-small by default, or specter2) decides the target table; see
+papergraph.encoders, which query embedding shares so the vectors match.
 
 Runs on the host, not in Docker: Docker on macOS cannot use the Apple GPU (MPS).
 Resumable: each round selects papers that have no vector yet and commits on its
@@ -13,19 +16,18 @@ import time
 
 import psycopg
 from pgvector.psycopg import register_vector
-from sentence_transformers import SentenceTransformer
+from psycopg import sql
 
 from papergraph.db import connect
-from papergraph.ingest.text import paper_text
+from papergraph.encoders import device, get_encoder, get_model
 
-MODEL = "BAAI/bge-small-en-v1.5"
-TABLE = "paper_embeddings_bge_small"
-INDEX = f"{TABLE}_hnsw_idx"
+# Larger models need smaller batches (BERT-base at 512 tokens vs MiniLM).
+DEFAULT_BATCH = {"bge-small": 128, "specter2": 32}
 
-_MISSING = f"""
+_MISSING = """
 SELECT p.id, p.title, p.abstract
 FROM papers p
-WHERE NOT EXISTS (SELECT 1 FROM {TABLE} e WHERE e.paper_id = p.id)
+WHERE NOT EXISTS (SELECT 1 FROM {table} e WHERE e.paper_id = p.id)
   -- A paper with no text would get the embedding of "", identical for all of
   -- them, which dense search could then return as a block of junk.
   AND (p.title <> '' OR p.abstract <> '')
@@ -37,38 +39,39 @@ LIMIT %s
 """
 
 
-def _device() -> str:
-    import torch
-
-    return "mps" if torch.backends.mps.is_available() else "cpu"
-
-
-def _build_index(conn: psycopg.Connection, mem: str) -> None:
+def _build_index(conn: psycopg.Connection, table: str, mem: str) -> None:
     """Create the HNSW index if missing. vector_cosine_ops makes `<=>` use it."""
     # The build is fast only while the whole graph fits in maintenance_work_mem;
     # pgvector logs a notice when it doesn't. This SET lasts for this session only.
     conn.execute(f"SET maintenance_work_mem = '{mem}'")
     start = time.perf_counter()
-    conn.execute(
-        f"CREATE INDEX IF NOT EXISTS {INDEX} ON {TABLE} USING hnsw (embedding vector_cosine_ops)"
-    )
-    print(f"index {INDEX} ready in {time.perf_counter() - start:,.0f}s")
+    index = f"{table}_hnsw_idx"
+    create = "CREATE INDEX IF NOT EXISTS {} ON {} USING hnsw (embedding vector_cosine_ops)"
+    conn.execute(sql.SQL(create).format(sql.Identifier(index), sql.Identifier(table)))
+    print(f"index {index} ready in {time.perf_counter() - start:,.0f}s")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--schema", default="public", help="corpus namespace, e.g. bench_litsearch")
+    parser.add_argument("--model", default="bge-small", help="bge-small | specter2")
     parser.add_argument("--limit", type=int, default=None, help="stop after N papers")
     parser.add_argument("--chunk", type=int, default=5000, help="papers fetched per round")
-    parser.add_argument("--batch-size", type=int, default=128, help="papers per forward pass")
+    parser.add_argument("--batch-size", type=int, default=None, help="papers per forward pass")
     parser.add_argument(
         "--index-mem", default="2GB", help="maintenance_work_mem for the HNSW build"
     )
     args = parser.parse_args()
 
-    device = _device()
-    model = SentenceTransformer(MODEL, device=device)
-    print(f"model {MODEL} on {device}")
+    model = get_model(args.model)
+    encoder = get_encoder(model.name)
+    batch_size = args.batch_size or DEFAULT_BATCH[model.name]
+    table = sql.Identifier(model.table)
+    missing = sql.SQL(_MISSING).format(table=table)
+    copy_sql = sql.SQL("COPY {} (paper_id, embedding) FROM STDIN (FORMAT BINARY)").format(table)
+    index = sql.Identifier(f"{model.table}_hnsw_idx")
+    drop_index = sql.SQL("DROP INDEX IF EXISTS {}").format(index)
+    print(f"model {model.name} on {device()} -> {args.schema}.{model.table}")
 
     start = time.perf_counter()
     done = 0
@@ -79,26 +82,23 @@ def main() -> None:
         register_vector(conn)  # teaches psycopg to send numpy arrays as pgvector values
         while args.limit is None or done < args.limit:
             size = args.chunk if args.limit is None else min(args.chunk, args.limit - done)
-            rows = conn.execute(_MISSING, (size,)).fetchall()
+            rows = conn.execute(missing, (size,)).fetchall()
             if not rows:
                 break
             if done == 0:  # there is work to do: drop the index until the load is over
-                conn.execute(f"DROP INDEX IF EXISTS {INDEX}")
-            texts = [paper_text(title, abstract) for _, title, abstract in rows]
-            # normalize_embeddings=True: unit vectors, so cosine similarity = dot product.
-            vectors = model.encode(texts, batch_size=args.batch_size, normalize_embeddings=True)
-            with conn.transaction(), conn.cursor() as cur:
-                copy_sql = f"COPY {TABLE} (paper_id, embedding) FROM STDIN WITH (FORMAT BINARY)"
-                with cur.copy(copy_sql) as copy:
-                    copy.set_types(["text", "vector"])
-                    for (paper_id, _, _), vec in zip(rows, vectors, strict=True):
-                        copy.write_row((paper_id, vec))
+                conn.execute(drop_index)
+            # Unit vectors (the encoders normalize), so cosine similarity = dot product.
+            vectors = encoder.encode_papers([(t, a) for _, t, a in rows], batch_size)
+            with conn.transaction(), conn.cursor() as cur, cur.copy(copy_sql) as copy:
+                copy.set_types(["text", "vector"])
+                for (paper_id, _, _), vec in zip(rows, vectors, strict=True):
+                    copy.write_row((paper_id, vec))
             done += len(rows)
             rate = done / (time.perf_counter() - start)
             print(f"{done:>9,} embedded  ({rate:,.0f} papers/s)", flush=True)
 
         print(f"embedded {done:,} papers in {time.perf_counter() - start:,.0f}s")
-        _build_index(conn, args.index_mem)
+        _build_index(conn, model.table, args.index_mem)
 
 
 if __name__ == "__main__":

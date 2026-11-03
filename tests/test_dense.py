@@ -3,13 +3,8 @@ import sys
 
 import pytest
 
-from papergraph.retrieval.dense import (
-    MODELS,
-    effective_ef_search,
-    get_model,
-    query_text,
-    vector_literal,
-)
+from papergraph.encoders import MODELS
+from papergraph.retrieval.dense import effective_ef_search, query_text, vector_literal
 
 BGE = MODELS["bge-small"]
 
@@ -32,10 +27,8 @@ def test_ef_search_never_below_k(k: int, ef: int, expected: int) -> None:
     assert effective_ef_search(k, ef) == expected
 
 
-def test_unknown_model_raises() -> None:
-    with pytest.raises(ValueError, match="unknown dense model"):
-        get_model("bert-huge")
-    assert get_model("bge-small") is BGE
+def test_models_without_instruction_ignore_the_flag() -> None:
+    assert query_text("q", MODELS["specter2"], True) == "q"
 
 
 def test_import_does_not_load_torch() -> None:
