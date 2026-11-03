@@ -16,6 +16,8 @@ from typing import Any
 
 import psycopg
 
+from papergraph.retrieval.filters import Filters
+
 K_RRF = 60
 
 
@@ -56,6 +58,7 @@ def search(
     retrievers: Sequence[Mapping[str, Any]] = (),
     k_rrf: int = K_RRF,
     candidates: int = 100,
+    filters: Filters | None = None,
 ) -> list[str]:
     """Top-k by RRF over sub-retrievers, each asked for `candidates` papers.
 
@@ -73,6 +76,9 @@ def search(
         if unknown:
             raise ValueError(f"unknown keys in hybrid sub-retriever: {sorted(unknown)}")
         retrieve = get_retriever(spec["kind"])
-        rankings.append(retrieve(conn, query, max(k, candidates), **spec.get("params", {})))
+        params = dict(spec.get("params", {}))
+        if filters is not None:
+            params["filters"] = filters  # every sub-retriever filters on its own
+        rankings.append(retrieve(conn, query, max(k, candidates), **params))
         weights.append(float(spec.get("weight", 1.0)))
     return rrf(rankings, k_rrf=k_rrf, weights=weights)[:k]

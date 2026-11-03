@@ -32,7 +32,7 @@ from papergraph.evals.benchmarks import get_benchmark
 from papergraph.evals.config import RunConfig, load_config
 from papergraph.evals.metrics import ndcg_at_k, recall_at_k, reciprocal_rank
 from papergraph.evals.stats import bootstrap_ci
-from papergraph.rerank import get_reranker
+from papergraph.rerank import get_reranker, merge_reranked
 from papergraph.retrieval.registry import RETRIEVERS as CORE_RETRIEVERS
 from papergraph.retrieval.registry import Retriever
 
@@ -121,18 +121,6 @@ def summarize(results: Sequence[QueryResult]) -> dict[str, Any]:
             for stage in stages
         },
     }
-
-
-def merge_reranked(ranked: Sequence[str], reranked_top: Sequence[str]) -> list[str]:
-    """The reranked head, then the rest of the first-stage list in its order.
-
-    The reranker reorders only the first len(reranked_top) candidates; papers
-    below that keep their first-stage ranks, so Recall@100 stays comparable.
-    """
-    head = set(reranked_top)
-    if head != set(ranked[: len(reranked_top)]):
-        raise ValueError("reranker must return a permutation of the top candidates")
-    return [*reranked_top, *(d for d in ranked if d not in head)]
 
 
 def run_dir_name(started: datetime, name: str) -> str:

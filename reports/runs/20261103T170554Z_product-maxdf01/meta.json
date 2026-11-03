@@ -1,0 +1,36 @@
+{
+  "name": "product-maxdf01",
+  "benchmark": "litsearch",
+  "split": "dev",
+  "n_queries": 198,
+  "limit": null,
+  "corpus_schema": "bench_litsearch",
+  "corpus_revision": "9573fb284a1026c998df47024b888a163f0f0e25",
+  "git": {
+    "sha": "7195d9dc24702f7882614e8cabf7607a9e1afd75",
+    "dirty": true,
+    "dirty_files": [
+      "akefile",
+      "pyproject.toml",
+      "src/papergraph/api/main.py",
+      "src/papergraph/db.py",
+      "src/papergraph/evals/runner.py",
+      "src/papergraph/rerank/__init__.py",
+      "src/papergraph/retrieval/bm25.py",
+      "src/papergraph/retrieval/dense.py",
+      "src/papergraph/retrieval/fusion.py",
+      "tests/test_rerank.py",
+      "uv.lock",
+      ".claude/",
+      "prompts/",
+      "src/papergraph/agent/",
+      "src/papergraph/api/static/",
+      "src/papergraph/retrieval/filters.py",
+      "src/papergraph/search.py",
+      "tests/test_agent.py",
+      "tests/test_filters.py"
+    ]
+  },
+  "started_at": "2026-11-03T17:05:54.240584+00:00",
+  "duration_s": 310.7
+}

@@ -26,6 +26,7 @@ import psycopg
 from psycopg import sql
 
 from papergraph.encoders import EmbeddingModel, get_encoder, get_model
+from papergraph.retrieval.filters import Filters, filter_sql
 
 
 def query_text(query: str, model: EmbeddingModel, use_instruction: bool) -> str:
@@ -54,20 +55,46 @@ def search(
     query_instruction: bool = True,
     ef_search: int = 100,
     exact: bool = False,
+    filters: Filters | None = None,
 ) -> list[str]:
     """Top-k paper ids by cosine similarity to the query embedding."""
     if not query.strip():
         return []
     m = get_model(model)
     vec = vector_literal(get_encoder(m.name).encode_query(query_text(query, m, query_instruction)))
+    return nearest(conn, vec, k, m, ef_search=ef_search, exact=exact, filters=filters)
+
+
+def nearest(
+    conn: psycopg.Connection,
+    vec: str,
+    k: int,
+    m: EmbeddingModel,
+    *,
+    ef_search: int = 100,
+    exact: bool = False,
+    filters: Filters | None = None,
+    exclude: str | None = None,
+) -> list[str]:
+    """Top-k paper ids nearest to a vector literal ('[...]'), optionally filtered."""
+    filtered = filters is not None and not filters.empty
+    condition, params = filter_sql(filters, "p") if filtered and filters else (sql.SQL("TRUE"), {})
+    params = {**params, "vec": vec, "k": k, "exclude": exclude}
     statement = sql.SQL(
-        "SELECT paper_id FROM {table} ORDER BY embedding <=> %s::vector LIMIT %s"
-    ).format(table=sql.Identifier(m.table))
+        "SELECT e.paper_id FROM {table} e "
+        + ("JOIN papers p ON p.id = e.paper_id " if filtered else "")
+        + "WHERE {condition} AND e.paper_id IS DISTINCT FROM %(exclude)s "
+        "ORDER BY e.embedding <=> %(vec)s::vector LIMIT %(k)s"
+    ).format(table=sql.Identifier(m.table), condition=condition)
     # SET LOCAL lasts until the end of this transaction only, so these
     # settings never leak into other queries on the same connection.
     with conn.transaction():
         # SET takes no bind parameters; the int() makes the formatting safe.
         conn.execute(f"SET LOCAL hnsw.ef_search = {int(effective_ef_search(k, ef_search))}")
+        if filtered:
+            # Keep scanning the HNSW graph until k rows pass the filter (pgvector >= 0.8);
+            # otherwise a selective filter returns far fewer than k rows.
+            conn.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
         if exact:
             conn.execute("SET LOCAL enable_indexscan = off")
-        return [row[0] for row in conn.execute(statement, (vec, k))]
+        return [row[0] for row in conn.execute(statement, params)]

@@ -5,8 +5,8 @@ import pytest
 from pydantic import ValidationError
 
 from papergraph.evals.config import RunConfig
-from papergraph.evals.runner import QueryResult, merge_reranked, summarize
-from papergraph.rerank import get_reranker
+from papergraph.evals.runner import QueryResult, summarize
+from papergraph.rerank import get_reranker, merge_reranked
 from papergraph.rerank.cross_encoder import order_by_scores
 
 

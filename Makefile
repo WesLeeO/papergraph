@@ -1,4 +1,4 @@
-.PHONY: help install up down logs ps nuke migrate ingest embed bench-litsearch eval compare psql test lint format check
+.PHONY: help install up down logs ps nuke migrate ingest embed bench-litsearch eval compare serve agent psql test lint format check
 
 help:  ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
@@ -46,6 +46,13 @@ eval:  ## Run an eval: CONFIG=configs/x.yaml BENCH=litsearch [SPLIT=dev] [LIMIT=
 
 compare:  ## Paired diff of two runs: A=reports/runs/<a> B=reports/runs/<b>
 	uv run python -m papergraph.evals.compare $(A) $(B)
+
+serve:  ## Web UI + API on the host (Mac GPU) at http://localhost:8080; needs `make up` and `ollama serve`
+	PAPERGRAPH_WARMUP=1 uv run --group embed uvicorn papergraph.api.main:app --host 127.0.0.1 --port 8080
+
+Q ?=
+agent:  ## Research agent in the terminal: make agent Q="your question"
+	uv run --group embed python -m papergraph.agent "$(Q)"
 
 psql:  ## Open a SQL shell on the database
 	docker compose exec db psql -U papergraph

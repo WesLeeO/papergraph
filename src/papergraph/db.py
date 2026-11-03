@@ -11,7 +11,16 @@ from papergraph.config import get_settings
 def create_pool() -> ConnectionPool:
     # open=False: the pool connects lazily, so the API can start (and report
     # "not ready") even while the database is still booting.
-    return ConnectionPool(get_settings().database_url, min_size=1, max_size=10, open=False)
+    # autocommit: each statement commits on its own, so a `conn.transaction()`
+    # in the retrievers is a real transaction and SET LOCAL settings never leak
+    # into the next request that reuses the connection.
+    return ConnectionPool(
+        get_settings().database_url,
+        min_size=1,
+        max_size=10,
+        open=False,
+        kwargs={"autocommit": True},
+    )
 
 
 def check_database(pool: ConnectionPool) -> bool:
