@@ -1,0 +1,22 @@
+# M4's best first stage (hybrid BM25 + bge-small, RRF) followed by a
+# cross-encoder reranking the top 100 candidates.
+name: hybrid-rerank-bge-m3
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+      - kind: bm25
+        params: {k1: 1.2, b: 0.75}
+      - kind: dense
+        params: {model: bge-small, query_instruction: true, ef_search: 100}
+rerank:
+  kind: cross_encoder
+  top_n: 100
+  params:
+    model: BAAI/bge-reranker-v2-m3
+    batch_size: 8     # faster than 32 on Apple MPS
+    max_length: 512
+    fp16: true        # same ranking as fp32 (Spearman 1.0 on a dev query), ~30% faster
+depth: 100

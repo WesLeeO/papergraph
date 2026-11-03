@@ -115,7 +115,9 @@ Rigor rules:
 - Postgres 16 + `pgvector` with HNSW indexes for vectors, full text, and graph
   edges. One DB on purpose; revisit only if the evals or latency demand it.
 - Embeddings to compare: `BAAI/bge-small-en-v1.5` vs `allenai/specter2`
-- Reranker: cross-encoder (`BAAI/bge-reranker-v2-m3`); LLM rerank as a comparison
+- Reranker: cross-encoder `mixedbread-ai/mxbai-rerank-xsmall-v1` on the top 20
+  (default, chosen for latency); `BAAI/bge-reranker-v2-m3` as the quality
+  reference; LLM rerank as a comparison
 - LLM: Claude via the `anthropic` SDK (`claude-sonnet-5-5` generator,
   `claude-opus-5-5` judge). Key from `ANTHROPIC_API_KEY` in `.env`, never committed.
 - API: FastAPI. Tracing: Arize Phoenix, self-hosted.
@@ -188,6 +190,11 @@ A milestone is done only when its eval or test evidence exists.
    [+0.103, +0.186]); Recall@100 0.813. SPECTER2 lost to bge-small (−0.198
    nDCG@10 dense). BM25 defaults kept; RRF weights not tuned.
 5. **Reranking:** cross-encoder vs LLM rerank, with the quality vs latency trade-off.
+   Done so far (dev): cross-encoders on the hybrid. Rerank depth 20 keeps the
+   full gain of depth 100 at 1/5 of the cost; bge-reranker-v2-m3 @20 nDCG@10
+   0.556 (+0.061) in 1.07 s, mxbai-xsmall @20 0.537 (+0.042) in 0.43 s (gap to
+   bge not significant, chosen as default), MiniLM-L6 no gain. Left: LLM rerank,
+   M5 report.
 6. **Venues v2:** DBLP title matching with measured coverage; venue as a ranking signal.
 7. **Graph:** author and kNN edges, 1-hop and PPR expansion; entity edges as an experiment.
 8. **Explanations:** grounded explanations, LLM judge, judge calibration.

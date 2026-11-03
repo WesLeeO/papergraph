@@ -1,0 +1,31 @@
+name: rerank20-bge-m3
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+    - kind: bm25
+      params:
+        k1: 1.2
+        b: 0.75
+    - kind: dense
+      params:
+        model: bge-small
+        query_instruction: true
+        ef_search: 100
+rerank:
+  kind: cross_encoder
+  top_n: 20
+  params:
+    model: BAAI/bge-reranker-v2-m3
+    batch_size: 8
+    max_length: 512
+    fp16: true
+depth: 100
+recall_ks:
+- 10
+- 20
+- 50
+- 100
+ndcg_k: 10

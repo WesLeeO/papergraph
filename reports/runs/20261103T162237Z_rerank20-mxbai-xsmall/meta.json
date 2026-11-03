@@ -1,0 +1,26 @@
+{
+  "name": "rerank20-mxbai-xsmall",
+  "benchmark": "litsearch",
+  "split": "dev",
+  "n_queries": 198,
+  "limit": null,
+  "corpus_schema": "bench_litsearch",
+  "corpus_revision": "9573fb284a1026c998df47024b888a163f0f0e25",
+  "git": {
+    "sha": "b4d066f54adb181a31bf1c9e6f31254382f2ee81",
+    "dirty": true,
+    "dirty_files": [
+      "rc/papergraph/evals/config.py",
+      "src/papergraph/evals/runner.py",
+      "configs/hybrid_rerank_bge_m3.yaml",
+      "configs/rerank20_bge_base.yaml",
+      "configs/rerank20_bge_m3.yaml",
+      "configs/rerank20_minilm.yaml",
+      "configs/rerank20_mxbai_xsmall.yaml",
+      "src/papergraph/rerank/",
+      "tests/test_rerank.py"
+    ]
+  },
+  "started_at": "2026-11-03T16:22:37.410950+00:00",
+  "duration_s": 198.1
+}
