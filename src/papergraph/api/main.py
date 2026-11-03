@@ -92,37 +92,50 @@ def make_filters(
     return Filters(year_from, year_to, split_csv(venues), split_csv(categories))
 
 
+Year = Annotated[int | None, Query(ge=1900, le=2100)]
+
+
 @app.get("/api/search")
 def api_search(
     request: Request,
     q: Annotated[str, Query(max_length=500)] = "",
     author: Annotated[str, Query(max_length=200)] = "",
-    k: Annotated[int, Query(ge=1, le=50)] = 10,
-    year_from: int | None = None,
-    year_to: int | None = None,
+    offset: Annotated[int, Query(ge=0, le=5000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    year_from: Year = None,
+    year_to: Year = None,
     venues: str = "",
     categories: str = "",
     rerank: bool = True,
 ) -> dict[str, Any]:
-    """Papers for an interest (q), or by an author (optionally ranked by q)."""
+    """One page of papers for an interest (q), or by an author (optionally ranked by q).
+
+    The full ranking is computed once per query and cached, so asking for the
+    next page (offset += limit) is cheap and consistent with the first.
+    """
     if not q.strip() and not author.strip():
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "give q, author, or both")
+    if year_from and year_to and year_from > year_to:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "From year is after To year")
     filters = make_filters(year_from, year_to, venues, categories)
     start = time.perf_counter()
     matched: list[dict[str, Any]] = []
     with request.app.state.pool.connection() as conn:
         if author.strip():
-            variants, papers = svc.author_papers(
-                conn, author, query=q or None, k=k, filters=filters
-            )
+            variants, ids = svc.author_ranked_ids(conn, author, query=q or None, filters=filters)
             matched = [{"name": n, "papers": c} for n, c in variants]
         else:
-            papers = svc.search(conn, q, k=k, filters=filters, rerank=rerank)
+            ids = svc.ranked_ids(conn, q, filters=filters, rerank=rerank)
+        papers = svc.fetch_papers(conn, ids[offset : offset + limit])
+    end = offset + len(papers)
     return {
         "query": q,
         "author": author,
         "matched_authors": matched,
         "papers": [p.to_dict() for p in papers],
+        "offset": offset,
+        "total": len(ids),
+        "next_offset": end if end < len(ids) else None,
         "ms": round((time.perf_counter() - start) * 1000),
     }
 

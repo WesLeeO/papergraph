@@ -5,9 +5,12 @@
 These defaults are the M4/M5 winners on LitSearch dev (see reports/m4, reports/m5).
 """
 
-from collections.abc import Sequence
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 import psycopg
 from psycopg import sql
@@ -28,6 +31,53 @@ HYBRID: list[dict[str, Any]] = [
     },
 ]
 RERANK_TOP_N = 20
+# Candidates per retriever when ranking a query for browsing. Up to twice this
+# many papers come out of fusion: the "end of results" a user can scroll to.
+POOL = 300
+
+T = TypeVar("T")
+
+
+class _TTLCache:
+    """A small thread-safe LRU cache with expiry, for ranked id lists.
+
+    Scrolling asks for page after page of the same query; ranking it once and
+    slicing the cached list keeps pages fast and consistent with each other.
+    Entries expire so a re-ingested corpus shows up within minutes.
+    """
+
+    def __init__(self, max_entries: int = 256, ttl_s: float = 600) -> None:
+        self.max_entries, self.ttl_s = max_entries, ttl_s
+        self._data: OrderedDict[Hashable, tuple[float, Any]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get_or_compute(self, key: Hashable, compute: Callable[[], T]) -> T:
+        now = time.monotonic()
+        with self._lock:
+            hit = self._data.get(key)
+            if hit is not None and now - hit[0] < self.ttl_s:
+                self._data.move_to_end(key)
+                return hit[1]  # type: ignore[no-any-return]
+        value = compute()  # outside the lock: ranking takes ~0.5 s
+        with self._lock:
+            self._data[key] = (now, value)
+            self._data.move_to_end(key)
+            while len(self._data) > self.max_entries:
+                self._data.popitem(last=False)
+        return value
+
+    def clear(self) -> None:
+        with self._lock:
+            self._data.clear()
+
+
+_rankings = _TTLCache()
+
+
+def _corpus_key(conn: psycopg.Connection) -> str:
+    """Which corpus the connection searches (public, bench_litsearch, ...)."""
+    row = conn.execute("SHOW search_path").fetchone()
+    return str(row[0]) if row else ""
 
 
 @dataclass(frozen=True)
@@ -83,23 +133,42 @@ def fetch_papers(conn: psycopg.Connection, ids: Sequence[str]) -> list[Paper]:
     return [rows[i] for i in ids if i in rows]
 
 
+def ranked_ids(
+    conn: psycopg.Connection,
+    query: str,
+    filters: Filters | None = None,
+    rerank: bool = True,
+) -> list[str]:
+    """Every paper id the pipeline returns for `query`, best first (cached).
+
+    Hybrid retrieval over a deep pool (POOL candidates per retriever), with
+    the top RERANK_TOP_N reordered by the cross-encoder.
+    """
+    if not query.strip():
+        return []
+    f = filters or Filters()
+
+    def compute() -> list[str]:
+        ids = fusion.search(conn, query, 2 * POOL, retrievers=HYBRID, candidates=POOL, filters=f)
+        if rerank and ids:
+            ids = merge_reranked(ids, cross_encoder.rerank(conn, query, ids[:RERANK_TOP_N]))
+        return ids
+
+    key = ("search", _corpus_key(conn), query.strip(), f, rerank)
+    return _rankings.get_or_compute(key, compute)
+
+
 def search(
     conn: psycopg.Connection,
     query: str,
     k: int = 10,
     filters: Filters | None = None,
     rerank: bool = True,
+    offset: int = 0,
 ) -> list[Paper]:
-    """The top-k papers for a free-text interest, best first."""
-    if not query.strip():
-        return []
-    ids = fusion.search(
-        conn, query, max(k, 100), retrievers=HYBRID, candidates=100, filters=filters
-    )
-    if rerank and ids:
-        top = ids[:RERANK_TOP_N]
-        ids = merge_reranked(ids, cross_encoder.rerank(conn, query, top))
-    return fetch_papers(conn, ids[:k])
+    """Papers ranked offset..offset+k for a free-text interest, best first."""
+    ids = ranked_ids(conn, query, filters, rerank)
+    return fetch_papers(conn, ids[offset : offset + k])
 
 
 def get_paper(conn: psycopg.Connection, paper_id: str) -> Paper | None:
@@ -166,17 +235,76 @@ def _same_person(q: list[str], c: list[str]) -> bool:
 def find_authors(conn: psycopg.Connection, name: str, limit: int = 10) -> list[tuple[str, int]]:
     """Name variants in the data matching `name`, with paper counts, most papers first."""
     tokens = _tokens(name)
-    if not tokens:
+    longest = max(tokens, key=len) if tokens else ""
+    # Need two letters/digits: 'a' would match millions of names, and '%%%%'
+    # has no trigrams for the index to use, so it would scan every row.
+    if sum(ch.isalnum() for ch in longest) < 2:
         return []
+    # Escape LIKE wildcards typed by the user: '%' must not match every name.
+    pattern = longest.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     # Narrow candidates with the longest name part: the most selective, and it
     # must appear in any spelling or order ('fei-fei' for 'Fei-Fei Li'). The
     # trigram index on lower(name) makes this LIKE fast.
     rows = conn.execute(
         "SELECT name, count(*) FROM paper_authors WHERE lower(name) LIKE %s "
         "GROUP BY name ORDER BY count(*) DESC LIMIT 200",
-        (f"%{max(tokens, key=len)}%",),
+        (f"%{pattern}%",),
     )
     return [(n, int(c)) for n, c in rows if name_matches(name, n)][:limit]
+
+
+def author_ranked_ids(
+    conn: psycopg.Connection,
+    name: str,
+    query: str | None = None,
+    filters: Filters | None = None,
+) -> tuple[list[tuple[str, int]], list[str]]:
+    """Name variants matched, and the ids of all their papers (cached).
+
+    Without `query`: newest first. With `query`: ranked by relevance to it
+    (embedding similarity, then the cross-encoder on the top 20). An author
+    has at most a few hundred papers, so they are ranked exactly instead of
+    searching the whole corpus with a very selective filter.
+    """
+    f = filters or Filters()
+    q = (query or "").strip()
+
+    def compute() -> tuple[list[tuple[str, int]], list[str]]:
+        variants = find_authors(conn, name)
+        if not variants:
+            return [], []
+        condition, params = filter_sql(f, "p")
+        rows = conn.execute(
+            sql.SQL(
+                "SELECT p.id FROM papers p WHERE {} AND EXISTS (SELECT 1 FROM paper_authors a "
+                "WHERE a.paper_id = p.id AND a.name = ANY(%(names)s)) "
+                "ORDER BY p.published DESC NULLS LAST, p.id LIMIT 2000"
+            ).format(condition),
+            {**params, "names": [n for n, _ in variants]},
+        )
+        ids = [r[0] for r in rows]
+        if q and ids:
+            m = get_model("bge-small")
+            embedded = get_encoder(m.name).encode_query(dense.query_text(q, m, True))
+            vec = dense.vector_literal(embedded)
+            ranked = [
+                r[0]
+                for r in conn.execute(
+                    sql.SQL(
+                        "SELECT paper_id FROM {} WHERE paper_id = ANY(%s) "
+                        "ORDER BY embedding <=> %s::vector"
+                    ).format(sql.Identifier(m.table)),
+                    (ids, vec),
+                )
+            ]
+            # Papers without an embedding yet keep their date order, after the ranked ones.
+            seen = set(ranked)
+            ids = ranked + [i for i in ids if i not in seen]
+            ids = merge_reranked(ids, cross_encoder.rerank(conn, q, ids[:RERANK_TOP_N]))
+        return variants, ids
+
+    key = ("author", _corpus_key(conn), name.strip().lower(), q, f)
+    return _rankings.get_or_compute(key, compute)
 
 
 def author_papers(
@@ -185,46 +313,8 @@ def author_papers(
     query: str | None = None,
     k: int = 15,
     filters: Filters | None = None,
+    offset: int = 0,
 ) -> tuple[list[tuple[str, int]], list[Paper]]:
-    """Papers by an author (all spellings of the name), with the variants found.
-
-    Without `query`: newest first. With `query`: the author's papers ranked by
-    relevance to it (embedding similarity, then the cross-encoder on the top
-    20). An author has at most a few hundred papers, so this ranks them
-    exactly instead of searching the whole corpus with a very selective filter.
-    """
-    variants = find_authors(conn, name)
-    if not variants:
-        return [], []
-    names = [n for n, _ in variants]
-    f = filters or Filters()
-    condition, params = filter_sql(f, "p")
-    rows = conn.execute(
-        sql.SQL(
-            "SELECT p.id FROM papers p WHERE {} AND EXISTS (SELECT 1 FROM paper_authors a "
-            "WHERE a.paper_id = p.id AND a.name = ANY(%(names)s)) "
-            "ORDER BY p.published DESC NULLS LAST, p.id LIMIT 1000"
-        ).format(condition),
-        {**params, "names": names},
-    )
-    ids = [r[0] for r in rows]
-    if query and query.strip() and ids:
-        m = get_model("bge-small")
-        vec = dense.vector_literal(
-            get_encoder(m.name).encode_query(dense.query_text(query, m, True))
-        )
-        ranked = [
-            r[0]
-            for r in conn.execute(
-                sql.SQL(
-                    "SELECT paper_id FROM {} WHERE paper_id = ANY(%s) "
-                    "ORDER BY embedding <=> %s::vector"
-                ).format(sql.Identifier(m.table)),
-                (ids, vec),
-            )
-        ]
-        # Papers without an embedding yet keep their date order, after the ranked ones.
-        ids = ranked + [i for i in ids if i not in set(ranked)]
-        top = ids[:RERANK_TOP_N]
-        ids = merge_reranked(ids, cross_encoder.rerank(conn, query, top))
-    return variants, fetch_papers(conn, ids[:k])
+    """Papers by an author (all spellings of the name), with the variants found."""
+    variants, ids = author_ranked_ids(conn, name, query, filters)
+    return variants, fetch_papers(conn, ids[offset : offset + k])

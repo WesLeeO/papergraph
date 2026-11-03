@@ -4,295 +4,382 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PaperGraph</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg stroke='%238b9bff' stroke-width='2.2' stroke-linecap='round'%3E%3Cline x1='8' y1='22' x2='16' y2='9'/%3E%3Cline x1='16' y1='9' x2='25' y2='19'/%3E%3Cline x1='8' y1='22' x2='25' y2='19'/%3E%3C/g%3E%3Ccircle cx='8' cy='22' r='4' fill='%23b4a2ff'/%3E%3Ccircle cx='16' cy='9' r='4' fill='%238b9bff'/%3E%3Ccircle cx='25' cy='19' r='4' fill='%236ee7d8'/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70;
-    --line: #e4e4e0; --accent: #3d5afe; --accent-soft: #eef0ff; --ok: #1b873f; --warn: #b26a00;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #141416; --panel: #1d1d20; --text: #ececee; --muted: #9a9aa2;
-      --line: #2e2e33; --accent: #8c9eff; --accent-soft: #23263a; --ok: #57c27a; --warn: #e0a54a;
-    }
+    --bg: #09090b; --surface: #121216; --surface-2: #18181e; --line: #26262f;
+    --text: #ececf1; --muted: #8e8e9c; --faint: #5c5c69;
+    --accent: #8b9bff; --accent-2: #b4a2ff; --teal: #6ee7d8; --warn: #f0b45a; --ok: #6fd69a;
+    --radius: 12px;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 16px 60px; }
-  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
-  h1 { font-size: 24px; margin: 0; letter-spacing: -0.02em; }
-  .tagline { color: var(--muted); font-size: 14px; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
-  .tab { border: 1px solid var(--line); background: var(--panel); color: var(--text);
-         padding: 8px 14px; border-radius: 999px; cursor: pointer; font-size: 14px; }
-  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  input[type=text], textarea, input[type=number] {
-    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-    border-radius: 10px; padding: 10px 12px; }
-  input[type=text] { flex: 1; min-width: 220px; }
-  textarea { width: 100%; min-height: 72px; resize: vertical; }
-  input[type=number] { width: 96px; }
-  button.go { font: inherit; background: var(--accent); color: #fff; border: 0; border-radius: 10px;
-              padding: 10px 18px; cursor: pointer; }
-  button.go:disabled { opacity: .55; cursor: default; }
-  .filters { margin-top: 12px; display: grid; gap: 10px; }
-  .label { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 16px 80px; }
+
+  /* header */
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .logo { width: 34px; height: 34px; flex: none; }
+  .brand { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+  .brand span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text;
+                background-clip: text; color: transparent; }
+  .corpus { margin-left: auto; color: var(--faint); font-size: 12.5px; text-align: right; }
+
+  /* search bar */
+  .bar { display: flex; gap: 8px; background: var(--surface); border: 1px solid var(--line);
+         border-radius: 14px; padding: 6px; transition: border-color .15s; }
+  .bar:focus-within { border-color: #3b3b4a; }
+  .bar input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--text);
+               font: inherit; font-size: 16px; padding: 10px 10px; }
+  .bar input::placeholder { color: var(--faint); }
+  button { font: inherit; cursor: pointer; border-radius: 10px; border: 0; }
+  .btn { background: var(--accent); color: #0b0b14; font-weight: 600; padding: 9px 16px; white-space: nowrap; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  .btn.ghost:hover { border-color: #3b3b4a; }
+  .btn:disabled { opacity: .45; cursor: default; filter: none; }
+  .sub { display: flex; justify-content: space-between; align-items: center; margin: 10px 4px 0; gap: 10px; flex-wrap: wrap; }
+  .link { background: none; color: var(--muted); padding: 2px 0; font-size: 13.5px; }
+  .link:hover { color: var(--text); }
+  .hint { color: var(--faint); font-size: 12.5px; }
+
+  /* filters */
+  .filters { margin-top: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+             padding: 14px; display: grid; gap: 12px; }
+  .label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin-bottom: 6px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .field { background: var(--surface-2); border: 1px solid var(--line); color: var(--text); font: inherit;
+           border-radius: 9px; padding: 8px 10px; outline: 0; }
+  .field:focus { border-color: #3b3b4a; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 13px;
-          cursor: pointer; user-select: none; background: var(--panel); }
-  .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-  .meta { color: var(--muted); font-size: 13px; margin: 14px 2px 8px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 10px; }
-  .card h3 { margin: 0 0 4px; font-size: 16px; line-height: 1.35; }
-  .card h3 a { color: var(--text); text-decoration: none; }
-  .card h3 a:hover { color: var(--accent); }
-  .byline { color: var(--muted); font-size: 13px; }
-  .badge { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px;
-           background: var(--accent-soft); color: var(--accent); margin-left: 6px; }
-  .abstract { margin-top: 8px; font-size: 14px; }
-  .more { color: var(--accent); cursor: pointer; font-size: 13px; }
-  .rank { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
-  .steps { margin-top: 14px; display: grid; gap: 6px; }
-  .step { font-size: 13px; border-left: 3px solid var(--line); padding: 4px 10px; color: var(--muted); }
+  .chip { border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); border-radius: 999px;
+          padding: 3px 10px; font-size: 12.5px; cursor: pointer; user-select: none; }
+  .chip:hover { color: var(--text); }
+  .chip.on { border-color: var(--accent); color: var(--accent); background: rgba(139,155,255,.1); }
+  .count-badge { background: var(--accent); color: #0b0b14; border-radius: 999px; font-size: 11px; padding: 0 6px; margin-left: 4px; }
+
+  /* agent panel */
+  .agent { margin-top: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .agent-head { display: flex; align-items: center; gap: 8px; }
+  .agent-head .title { font-weight: 600; }
+  .agent-head .close { margin-left: auto; background: none; color: var(--faint); font-size: 18px; padding: 0 4px; }
+  .status { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .steps { margin-top: 10px; display: grid; gap: 4px; }
+  .step { font-size: 13px; color: var(--muted); border-left: 2px solid var(--line); padding: 3px 10px; }
   .step.call { border-color: var(--accent); color: var(--text); }
   .step.err { border-color: var(--warn); color: var(--warn); }
-  .step code { font-size: 12.5px; }
-  .answer { margin-top: 16px; }
+  .step code { color: var(--accent-2); font-size: 12.5px; word-break: break-word; }
+  .answer { margin-top: 12px; line-height: 1.6; }
+  .answer p { margin: 0 0 10px; }
+  .answer ol, .answer ul { padding-left: 20px; margin: 6px 0 10px; }
+  .answer li { margin-bottom: 6px; }
   .answer a.cite { color: var(--accent); text-decoration: none; font-weight: 600; }
-  .answer ol, .answer ul { padding-left: 22px; }
-  .status { font-size: 13px; color: var(--muted); margin-top: 10px; }
+
+  /* results */
+  .meta { color: var(--muted); font-size: 13px; margin: 22px 4px 4px; min-height: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 14px 16px; margin-top: 10px; transition: border-color .15s; }
+  .card:hover { border-color: #33333f; }
+  .card h3 { margin: 0 0 4px; font-size: 15.5px; font-weight: 600; line-height: 1.35; }
+  .card h3 a { text-decoration: none; }
+  .card h3 a:hover { color: var(--accent); }
+  .rank { color: var(--faint); font-weight: 500; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  .byline { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+           color: var(--teal); background: rgba(110,231,216,.1); margin-left: 6px; vertical-align: 1px; }
+  .abstract { margin-top: 8px; color: #c9c9d3; font-size: 14px; }
+  .more { color: var(--accent); cursor: pointer; font-size: 13px; margin-left: 4px; }
+  .end { color: var(--faint); text-align: center; font-size: 13px; padding: 22px 0; }
+  .empty { color: var(--muted); text-align: center; padding: 48px 0; }
+  .empty b { color: var(--text); }
   .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line);
              border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite;
              vertical-align: -2px; margin-right: 6px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .hidden { display: none; }
-  .note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
   .warn { color: var(--warn); }
+  .hidden { display: none !important; }
+  @media (max-width: 560px) {
+    .corpus { display: none; }
+    .bar { flex-wrap: wrap; }
+    .bar input { flex-basis: 100%; }
+    .bar .btn { flex: 1; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>PaperGraph</h1>
-    <span class="tagline" id="tagline">Find ML papers that match your interests</span>
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b9bff"/><stop offset="1" stop-color="#b4a2ff"/></linearGradient></defs>
+      <g stroke="url(#g)" stroke-width="2" stroke-linecap="round" opacity=".9">
+        <line x1="8" y1="22" x2="16" y2="9"/><line x1="16" y1="9" x2="25" y2="19"/><line x1="8" y1="22" x2="25" y2="19"/>
+      </g>
+      <circle cx="8" cy="22" r="4" fill="#b4a2ff"/><circle cx="16" cy="9" r="4" fill="#8b9bff"/><circle cx="25" cy="19" r="4" fill="#6ee7d8"/>
+    </svg>
+    <div class="brand">Paper<span>Graph</span></div>
+    <div class="corpus" id="corpus"></div>
   </header>
 
-  <div class="tabs">
-    <button class="tab active" data-tab="search">Search</button>
-    <button class="tab" data-tab="agent">Research agent</button>
+  <form class="bar" id="form" autocomplete="off">
+    <input id="q" placeholder="Describe a research interest or ask a question…" maxlength="500" aria-label="Search">
+    <button class="btn" id="search-btn" type="submit">Search</button>
+    <button class="btn ghost" id="agent-btn" type="button" title="A local AI agent searches step by step and writes a cited answer (30 s to 3 min)">Ask agent</button>
+  </form>
+  <div class="sub">
+    <button class="link" id="toggle-filters" type="button">Filters <span id="filter-count"></span></button>
+    <span class="hint" id="agent-hint">Search is instant · the agent researches your question in depth</span>
   </div>
 
-  <!-- Search -->
-  <section id="tab-search">
-    <div class="panel">
-      <form id="search-form" class="row">
-        <input type="text" id="q" placeholder="Describe your interest, e.g. contrastive learning for medical images" autocomplete="off">
-        <button class="go" id="search-btn">Search</button>
-      </form>
-      <div class="filters">
-        <div class="row" style="align-items:center">
-          <div style="flex:1; min-width:220px"><div class="label">Author (optional)</div><input type="text" id="author" placeholder="e.g. Yann LeCun" autocomplete="off" style="width:100%"></div>
-          <div><div class="label">From year</div><input type="number" id="year-from" min="1990" max="2100" placeholder="any"></div>
-          <div><div class="label">To year</div><input type="number" id="year-to" min="1990" max="2100" placeholder="any"></div>
-        </div>
-        <div><div class="label">Venue (papers with a detected venue)</div><div class="chips" id="venues"></div></div>
-        <div><div class="label">Category</div><div class="chips" id="categories"></div></div>
-      </div>
+  <div class="filters hidden" id="filters">
+    <div class="row">
+      <div style="flex:1; min-width:200px"><div class="label">Author</div>
+        <input class="field" id="author" placeholder="e.g. Yann LeCun" style="width:100%" maxlength="200"></div>
+      <div><div class="label">From year</div><input class="field" id="year-from" type="number" min="1990" max="2100" placeholder="any" style="width:96px"></div>
+      <div><div class="label">To year</div><input class="field" id="year-to" type="number" min="1990" max="2100" placeholder="any" style="width:96px"></div>
     </div>
-    <div class="meta" id="search-meta"></div>
-    <div id="results"></div>
-  </section>
+    <div><div class="label">Venue</div><div class="chips" id="venues"></div></div>
+    <div><div class="label">Category</div><div class="chips" id="categories"></div></div>
+    <div class="row" style="justify-content:space-between; align-items:center">
+      <span class="hint">Filters apply to Search. The agent chooses its own filters from your question.</span>
+      <button class="link" id="clear-filters" type="button">Clear filters</button>
+    </div>
+  </div>
 
-  <!-- Agent -->
-  <section id="tab-agent" class="hidden">
-    <div class="panel">
-      <textarea id="question" placeholder="Ask a research question, e.g. Which methods reduce hallucination in retrieval-augmented generation, and how do they compare?"></textarea>
-      <div class="row" style="margin-top:8px; align-items:center">
-        <button class="go" id="agent-btn">Research</button>
-        <label class="note" style="margin:0"><input type="checkbox" id="think"> let the model reason first (slower, often better)</label>
-      </div>
-      <div class="note warn hidden" id="agent-unavailable"></div>
-      <div class="note">The agent runs a local open model (Qwen3 via Ollama). It plans searches, reads results and decides what to look up next, then writes a cited answer. Expect 30 s to 2 min.</div>
+  <section class="agent hidden" id="agent">
+    <div class="agent-head">
+      <span class="title">Research agent</span>
+      <button class="close" id="agent-close" type="button" aria-label="Close">×</button>
     </div>
     <div class="status" id="agent-status"></div>
     <div class="steps" id="steps"></div>
     <div class="answer" id="answer"></div>
     <div id="agent-papers"></div>
   </section>
+
+  <div class="meta" id="meta"></div>
+  <div id="results"></div>
+  <div id="sentinel"></div>
+  <div class="end hidden" id="end"></div>
+
+  <div class="empty" id="welcome">
+    <b>Find machine-learning papers that match your interests.</b><br>
+    Try “reducing hallucination in RAG”, or open Filters to search by author.
+  </div>
 </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-
-// ---------- tabs ----------
-document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
-  document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
-  $("tab-search").classList.toggle("hidden", t.dataset.tab !== "search");
-  $("tab-agent").classList.toggle("hidden", t.dataset.tab !== "agent");
-}));
+const PAGE = 20;
 
 // ---------- paper cards ----------
-function paperCard(p, rank) {
+function paperCard(p, rank, idPrefix = "paper-") {
   const year = (p.published || "").slice(0, 4);
   const authors = p.authors.slice(0, 4).join(", ") + (p.authors.length > 4 ? " et al." : "");
   const venue = p.venue ? `<span class="badge">${esc(p.venue)} ${esc(p.venue_year || "")}</span>` : "";
-  const short = p.abstract.length > 320 ? p.abstract.slice(0, 320) + "…" : p.abstract;
-  const el = document.createElement("div");
+  const long = p.abstract.length > 300;
+  const el = document.createElement("article");
   el.className = "card";
-  el.id = "paper-" + p.id;
+  el.id = idPrefix + p.id;
   el.innerHTML = `
-    <h3>${rank ? `<span class="rank">${rank}.</span>` : ""}<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>${venue}</h3>
-    <div class="byline">${esc(authors)}${year ? " · " + esc(year) : ""} · ${esc(p.id)}${p.categories.length ? " · " + esc(p.categories.slice(0, 3).join(", ")) : ""}</div>
-    <div class="abstract"><span class="text">${esc(short)}</span>
-      ${p.abstract.length > 320 ? '<span class="more">more</span>' : ""}</div>`;
+    <h3>${rank ? `<span class="rank">${rank}</span>` : ""}<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title || "(untitled)")}</a>${venue}</h3>
+    <div class="byline">${esc(authors || "unknown authors")}${year ? " · " + esc(year) : ""} · ${esc(p.id)}${p.categories.length ? " · " + esc(p.categories.slice(0, 3).join(", ")) : ""}</div>
+    ${p.abstract ? `<div class="abstract"><span class="text">${esc(long ? p.abstract.slice(0, 300) + "…" : p.abstract)}</span>${long ? '<span class="more">more</span>' : ""}</div>` : ""}`;
   const more = el.querySelector(".more");
-  if (more) more.addEventListener("click", () => {
-    el.querySelector(".text").textContent = p.abstract;
-    more.remove();
-  });
+  if (more) more.addEventListener("click", () => { el.querySelector(".text").textContent = p.abstract; more.remove(); });
   return el;
 }
 
 // ---------- filters ----------
-const selected = { venues: new Set(), categories: new Set() };
-function chip(container, name, set, label) {
+const sel = { venues: new Set(), categories: new Set() };
+function chip(box, name, set, label) {
   const c = document.createElement("span");
-  c.className = "chip";
-  c.textContent = label || name;
-  c.addEventListener("click", () => {
-    set.has(name) ? set.delete(name) : set.add(name);
-    c.classList.toggle("on", set.has(name));
-  });
-  container.appendChild(c);
+  c.className = "chip"; c.textContent = label || name;
+  c.addEventListener("click", () => { set.has(name) ? set.delete(name) : set.add(name); c.classList.toggle("on", set.has(name)); updateFilterCount(); });
+  box.appendChild(c);
 }
-fetch("/api/meta").then((r) => r.json()).then((m) => {
-  m.venues.slice(0, 17).forEach((v) => chip($("venues"), v.name, selected.venues, `${v.name} (${v.count.toLocaleString()})`));
-  m.categories.forEach((c) => chip($("categories"), c, selected.categories));
-  $("tagline").textContent = `Find ML papers that match your interests · ${m.papers.toLocaleString()} arXiv papers up to ${m.latest || "?"}`;
-  if (m.agent && !m.agent.available) {
-    $("agent-unavailable").textContent = "Research agent unavailable: " + m.agent.message + ". Search still works. Reload this page once it is fixed.";
-    $("agent-unavailable").classList.remove("hidden");
-    $("agent-btn").disabled = true;
-  }
-}).catch(() => { $("tagline").textContent = "Database unavailable"; });
-
-// ---------- search ----------
-// The filter fields sit outside the <form>: make Enter in any of them search too.
-["author", "year-from", "year-to"].forEach((id) => $(id).addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { e.preventDefault(); $("search-form").requestSubmit(); }
-}));
-$("search-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const q = $("q").value.trim(), author = $("author").value.trim();
-  if (!q && !author) return;
-  const params = new URLSearchParams({ q, k: 15 });
-  if (author) params.set("author", author);
-  if ($("year-from").value) params.set("year_from", $("year-from").value);
-  if ($("year-to").value) params.set("year_to", $("year-to").value);
-  if (selected.venues.size) params.set("venues", [...selected.venues].join(","));
-  if (selected.categories.size) params.set("categories", [...selected.categories].join(","));
-  $("search-btn").disabled = true;
-  $("search-meta").innerHTML = '<span class="spinner"></span>Searching…';
-  $("results").innerHTML = "";
-  try {
-    const r = await fetch("/api/search?" + params);
-    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-    const data = await r.json();
-    if (data.author) {
-      const names = data.matched_authors.map((a) => `${a.name} (${a.papers})`).join(", ");
-      $("search-meta").textContent = data.matched_authors.length
-        ? `${data.papers.length} papers by ${names} · ${data.query ? "ranked by relevance" : "newest first"} · ${data.ms} ms`
-        : `No author matching "${data.author}". Check the spelling or try the surname alone.`;
-    } else {
-      $("search-meta").textContent = `${data.papers.length} papers · ${data.ms} ms · hybrid BM25 + dense retrieval, cross-encoder reranking`;
-    }
-    data.papers.forEach((p, i) => $("results").appendChild(paperCard(p, i + 1)));
-    if (!data.papers.length) $("search-meta").textContent = "No papers found. Try fewer filters.";
-  } catch (err) {
-    $("search-meta").innerHTML = `<span class="warn">Search failed: ${esc(err.message)}</span>`;
-  } finally {
-    $("search-btn").disabled = false;
-  }
+function activeFilters() {
+  return [$("author").value.trim(), $("year-from").value, $("year-to").value].filter(Boolean).length + sel.venues.size + sel.categories.size;
+}
+function updateFilterCount() {
+  const n = activeFilters();
+  $("filter-count").innerHTML = n ? `<span class="count-badge">${n}</span>` : "";
+}
+["author", "year-from", "year-to"].forEach((id) => {
+  $(id).addEventListener("input", updateFilterCount);
+  $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("form").requestSubmit(); } });
+});
+$("toggle-filters").addEventListener("click", () => $("filters").classList.toggle("hidden"));
+$("clear-filters").addEventListener("click", () => {
+  ["author", "year-from", "year-to"].forEach((id) => ($(id).value = ""));
+  sel.venues.clear(); sel.categories.clear();
+  document.querySelectorAll(".chip.on").forEach((c) => c.classList.remove("on"));
+  updateFilterCount();
 });
 
-// ---------- agent ----------
+let agentAvailable = true;
+fetch("/api/meta").then((r) => r.json()).then((m) => {
+  m.venues.slice(0, 17).forEach((v) => chip($("venues"), v.name, sel.venues, `${v.name} · ${v.count.toLocaleString()}`));
+  m.categories.forEach((c) => chip($("categories"), c, sel.categories));
+  $("corpus").innerHTML = `${m.papers.toLocaleString()} arXiv ML papers<br>up to ${esc(m.latest || "?")}`;
+  if (m.agent && !m.agent.available) {
+    agentAvailable = false;
+    $("agent-btn").disabled = true;
+    $("agent-hint").innerHTML = `<span class="warn">Agent unavailable: ${esc(m.agent.message)}</span>`;
+  }
+}).catch(() => { $("corpus").innerHTML = '<span class="warn">database unavailable</span>'; });
+
+// ---------- search with infinite scroll ----------
+let state = null;  // {params, nextOffset, loading, token}
+let token = 0;     // bumps on every new search: stale responses are dropped
+
+function searchParams() {
+  const p = new URLSearchParams();
+  const q = $("q").value.trim(), author = $("author").value.trim();
+  if (q) p.set("q", q);
+  if (author) p.set("author", author);
+  const yf = $("year-from").value, yt = $("year-to").value;
+  if (yf) p.set("year_from", yf);
+  if (yt) p.set("year_to", yt);
+  if (sel.venues.size) p.set("venues", [...sel.venues].join(","));
+  if (sel.categories.size) p.set("categories", [...sel.categories].join(","));
+  return p;
+}
+
+async function loadPage() {
+  if (!state || state.loading || state.nextOffset === null) return;
+  state.loading = true;
+  const my = state.token, offset = state.nextOffset;
+  const params = new URLSearchParams(state.params);
+  params.set("offset", offset); params.set("limit", PAGE);
+  if (offset === 0) $("meta").innerHTML = '<span class="spinner"></span>Searching…';
+  try {
+    const r = await fetch("/api/search?" + params);
+    const body = await r.json().catch(() => ({}));
+    if (my !== token) return;  // a newer search started meanwhile
+    if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : (body.detail?.[0]?.msg || r.statusText));
+    if (offset === 0) renderMeta(body);
+    body.papers.forEach((p, i) => $("results").appendChild(paperCard(p, offset + i + 1)));
+    state.nextOffset = body.next_offset;
+    if (body.next_offset === null && body.total > 0) {
+      $("end").textContent = `End of results · ${body.total.toLocaleString()} papers`;
+      $("end").classList.remove("hidden");
+    }
+  } catch (err) {
+    if (my !== token) return;
+    state.nextOffset = null;
+    $("meta").innerHTML = `<span class="warn">Search failed: ${esc(err.message)}</span>`;
+  } finally {
+    if (my === token) state.loading = false;
+  }
+  // Short first pages may not fill the screen: keep loading while the sentinel is visible.
+  if (my === token && state.nextOffset !== null && sentinelVisible()) loadPage();
+}
+
+function renderMeta(b) {
+  if (b.author) {
+    const names = b.matched_authors.map((a) => `${esc(a.name)} (${a.papers})`).join(", ");
+    $("meta").innerHTML = b.matched_authors.length
+      ? `${b.total.toLocaleString()} papers by ${names} · ${b.query ? "ranked by relevance to your query" : "newest first"} · ${b.ms} ms`
+      : `<span class="warn">No author matching “${esc(b.author)}”.</span> Check the spelling or try the surname alone.`;
+  } else {
+    $("meta").textContent = b.total
+      ? `${b.total.toLocaleString()} papers · ${b.ms} ms · keyword + semantic search, reranked`
+      : "No papers found. Try other words or fewer filters.";
+  }
+}
+
+const sentinelVisible = () => $("sentinel").getBoundingClientRect().top < window.innerHeight + 600;
+new IntersectionObserver((entries) => { if (entries[0].isIntersecting) loadPage(); }, { rootMargin: "600px" }).observe($("sentinel"));
+
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const params = searchParams();
+  if (!params.get("q") && !params.get("author")) { $("q").focus(); return; }
+  token += 1;
+  state = { params: params.toString(), nextOffset: 0, loading: false, token };
+  $("welcome").classList.add("hidden");
+  $("results").innerHTML = ""; $("end").classList.add("hidden");
+  window.scrollTo({ top: 0 });
+  loadPage();
+});
+
+// ---------- research agent ----------
 function renderAnswer(md) {
-  // Escape first, then add the little markdown the model uses.
-  const lines = esc(md).split("\n");
-  let html = "", list = null;
   const inline = (s) => s
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\[([A-Za-z0-9.\-\/]+)\]/g, '<a class="cite" href="#paper-$1">[$1]</a>');
-  for (const raw of lines) {
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/\[([A-Za-z0-9.\-\/]+)\]/g, '<a class="cite" href="#cited-$1">[$1]</a>');
+  let html = "", list = null;
+  for (const raw of esc(md).split("\n")) {   // escape first: model output is untrusted
     const line = raw.trim();
-    const ol = line.match(/^\d+[.)]\s+(.*)/), ul = line.match(/^[-*]\s+(.*)/);
+    const ol = line.match(/^\d+[.)]\s+(.*)/), ul = line.match(/^[-*•]\s+(.*)/);
     if (ol || ul) {
       const tag = ol ? "ol" : "ul";
       if (list !== tag) { if (list) html += `</${list}>`; html += `<${tag}>`; list = tag; }
-      html += `<li>${inline((ol || ul)[1])}</li>`;
-      continue;
+      html += `<li>${inline((ol || ul)[1])}</li>`; continue;
     }
     if (list) { html += `</${list}>`; list = null; }
-    if (line.startsWith("#")) html += `<h4>${inline(line.replace(/^#+\s*/, ""))}</h4>`;
+    if (line.startsWith("#")) html += `<p><strong>${inline(line.replace(/^#+\s*/, ""))}</strong></p>`;
     else if (line) html += `<p>${inline(line)}</p>`;
   }
-  if (list) html += `</${list}>`;
-  return html;
+  return html + (list ? `</${list}>` : "");
 }
 
 let source = null, timer = null;
+function stopAgent(msg) {
+  clearInterval(timer);
+  if (source) { source.close(); source = null; }
+  $("agent-status").innerHTML = msg;
+  $("agent-btn").disabled = !agentAvailable;
+}
+$("agent-close").addEventListener("click", () => { stopAgent(""); $("agent").classList.add("hidden"); });
+
 $("agent-btn").addEventListener("click", () => {
-  const q = $("question").value.trim();
-  if (q.length < 3) return;
+  const q = $("q").value.trim();
+  if (q.length < 3) { $("q").focus(); $("q").placeholder = "Type a research question first…"; return; }
   if (source) source.close();
+  $("welcome").classList.add("hidden");
+  $("agent").classList.remove("hidden");
   $("steps").innerHTML = ""; $("answer").innerHTML = ""; $("agent-papers").innerHTML = "";
   $("agent-btn").disabled = true;
   const t0 = Date.now();
-  const tick = (msg) => { $("agent-status").innerHTML = `<span class="spinner"></span>${esc(msg)} · ${Math.round((Date.now() - t0) / 1000)} s`; };
-  let phase = "Thinking about how to search";
-  tick(phase);
-  timer = setInterval(() => tick(phase), 1000);
-  const stop = (msg) => { clearInterval(timer); $("agent-status").innerHTML = msg; $("agent-btn").disabled = false; source && source.close(); };
+  let phase = "Planning searches";
+  const tick = () => { $("agent-status").innerHTML = `<span class="spinner"></span>${esc(phase)} · ${Math.round((Date.now() - t0) / 1000)} s`; };
+  tick(); timer = setInterval(tick, 1000);
+  let done = false;
 
-  source = new EventSource("/api/agent?" + new URLSearchParams({ q, think: $("think").checked }));
+  source = new EventSource("/api/agent?" + new URLSearchParams({ q }));
   source.onmessage = (msg) => {
     const ev = JSON.parse(msg.data);
     const step = document.createElement("div");
     if (ev.type === "tool_call") {
       step.className = "step call";
-      step.innerHTML = `<strong>Step ${ev.step}</strong> · ${esc(ev.name)} <code>${esc(JSON.stringify(ev.arguments))}</code>`;
-      $("steps").appendChild(step);
-      phase = `Running ${ev.name}`;
+      step.innerHTML = `${esc(ev.name.replace(/_/g, " "))} <code>${esc(JSON.stringify(ev.arguments))}</code>`;
+      $("steps").appendChild(step); phase = `Running ${ev.name.replace(/_/g, " ")}`;
     } else if (ev.type === "tool_result") {
       step.className = ev.error ? "step err" : "step";
-      step.textContent = ev.error ? ev.error : `→ ${ev.n_papers} papers: ` + ev.papers.slice(0, 3).map((p) => p.title).join(" · ") + (ev.n_papers > 3 ? " …" : "");
-      $("steps").appendChild(step);
-      phase = "Reading results and deciding what to do next";
+      step.textContent = ev.error || `→ ${ev.n_papers} papers` + (ev.n_papers ? ": " + ev.papers.slice(0, 2).map((p) => p.title).join(" · ") + (ev.n_papers > 2 ? " …" : "") : "");
+      $("steps").appendChild(step); phase = "Reading results";
     } else if (ev.type === "nudge") {
-      step.className = "step";
-      step.textContent = "Guardrail: only one search so far, asking the agent to cover the other aspects first.";
-      $("steps").appendChild(step);
-      phase = "Planning more searches";
-    } else if (ev.type === "thinking") {
-      step.className = "step";
-      step.textContent = "Reasoning: " + ev.text.slice(0, 300) + (ev.text.length > 300 ? "…" : "");
-      $("steps").appendChild(step);
+      step.className = "step"; step.textContent = "Asked to cover the remaining aspects before answering";
+      $("steps").appendChild(step); phase = "Planning more searches";
     } else if (ev.type === "final") {
+      done = true;
       $("answer").innerHTML = renderAnswer(ev.answer);
-      ev.papers.forEach((p, i) => $("agent-papers").appendChild(paperCard(p, i + 1)));
-      let note = `Done in ${ev.seconds} s · ${ev.steps} tool steps · ${ev.papers.length} cited papers verified`;
-      if (ev.unverified_ids.length) note += ` · <span class="warn">ignored unverified ids: ${esc(ev.unverified_ids.join(", "))}</span>`;
-      stop(note);
+      ev.papers.forEach((p, i) => $("agent-papers").appendChild(paperCard(p, i + 1, "cited-")));
+      let note = `Done in ${ev.seconds} s · ${ev.steps} tool call${ev.steps === 1 ? "" : "s"} · ${ev.papers.length} cited papers, all verified`;
+      if (ev.unverified_ids.length) note += ` · <span class="warn">ignored ${ev.unverified_ids.length} unverified citation(s)</span>`;
+      stopAgent(note);
     } else if (ev.type === "error") {
-      stop(`<span class="warn">Agent error: ${esc(ev.message)}</span>`);
-    } else if (ev.type === "done") {
-      if ($("agent-btn").disabled) stop("Stopped.");
+      done = true; stopAgent(`<span class="warn">Agent error: ${esc(ev.message)}</span>`);
+    } else if (ev.type === "done" && !done) {
+      stopAgent("Stopped.");
     }
   };
-  source.onerror = () => { if ($("agent-btn").disabled) stop('<span class="warn">Connection lost.</span>'); };
+  source.onerror = () => { if (!done) stopAgent('<span class="warn">Connection to the agent was lost.</span>'); };
 });
 </script>
 </body>
