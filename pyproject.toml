@@ -9,6 +9,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "pydantic-settings>=2.6",
     "psycopg[binary,pool]>=3.2",
+    "pgvector>=0.5.1",
 ]
 
 [dependency-groups]
@@ -17,6 +18,9 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
+]
+embed = [
+    "sentence-transformers>=6.2.0",
 ]
 
 [build-system]
@@ -38,6 +42,12 @@ python_version = "3.12"
 strict = true
 mypy_path = "src"
 packages = ["papergraph"]
+
+# The embed group (torch, sentence-transformers) isn't installed in CI or the
+# api image, and pgvector ships no type hints.
+[[tool.mypy.overrides]]
+module = ["sentence_transformers", "torch", "pgvector.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
