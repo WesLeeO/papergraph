@@ -117,16 +117,20 @@ def run_dir_name(started: datetime, name: str) -> str:
     return f"{started.astimezone(UTC):%Y%m%dT%H%M%SZ}_{name}"
 
 
-def git_state() -> dict[str, Any]:
+def git_state(cwd: Path | None = None) -> dict[str, Any]:
     """Commit SHA and whether the working tree had uncommitted changes.
 
     A dirty run can't be reproduced from its SHA alone, so it is flagged.
+    Run outputs (reports/runs/) are excluded: they are results, not code, and
+    counting them would mark every run after the first one dirty.
     """
 
     def git(*args: str) -> str:
-        return subprocess.run(["git", *args], capture_output=True, text=True).stdout.strip()
+        out = subprocess.run(["git", *args], capture_output=True, text=True, cwd=cwd)
+        return out.stdout.strip()
 
-    return {"sha": git("rev-parse", "HEAD") or None, "dirty": bool(git("status", "--porcelain"))}
+    status = git("status", "--porcelain", "--", ".", f":(exclude){RUNS_DIR}")
+    return {"sha": git("rev-parse", "HEAD") or None, "dirty": bool(status)}
 
 
 # --- database ---------------------------------------------------------------
