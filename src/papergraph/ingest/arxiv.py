@@ -62,13 +62,22 @@ def parse_record(raw: dict[str, Any]) -> Paper | None:
     )
 
 
-def iter_papers(path: Path, limit: int | None = None) -> Iterator[Paper]:
-    """Stream ML papers from the snapshot, one line at a time (the file is ~5 GB)."""
+def iter_papers(
+    path: Path, limit: int | None = None, from_year: int | None = None
+) -> Iterator[Paper]:
+    """Stream ML papers from the snapshot, one line at a time (the file is ~5 GB).
+
+    from_year keeps only papers first published in that year or later: a quick
+    way to a small, recent corpus (the snapshot itself is ordered oldest first,
+    so `limit` alone would give the oldest papers).
+    """
     count = 0
     with path.open(encoding="utf-8") as f:
         for line in f:
             paper = parse_record(json.loads(line))
             if paper is None:
+                continue
+            if from_year is not None and paper.published.year < from_year:
                 continue
             yield paper
             count += 1

@@ -27,6 +27,7 @@ from papergraph.agent.llm import DEFAULT_MODEL, OllamaClient
 from papergraph.agent.loop import Event, run_agent
 from papergraph.agent.tools import Toolbox
 from papergraph.db import check_database, create_pool
+from papergraph.doctor import check_ollama
 from papergraph.ingest.arxiv import ML_CATEGORIES
 from papergraph.retrieval.filters import Filters
 
@@ -145,9 +146,12 @@ def api_meta(request: Request) -> dict[str, Any]:
     except Exception as e:
         detail = f"database unavailable: {e}"
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail) from e
+    agent_ok, agent_message = check_ollama()
     return {
         "venues": [{"name": v, "count": n} for v, n in venues],
         "categories": sorted(ML_CATEGORIES),
         "papers": row[0] if row else 0,
         "latest": row[1].isoformat() if row and row[1] else None,
+        # The agent needs a local Ollama server; search works without it.
+        "agent": {"available": agent_ok, "message": agent_message},
     }

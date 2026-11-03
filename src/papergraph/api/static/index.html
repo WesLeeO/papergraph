@@ -112,6 +112,7 @@
         <button class="go" id="agent-btn">Research</button>
         <label class="note" style="margin:0"><input type="checkbox" id="think"> let the model reason first (slower, often better)</label>
       </div>
+      <div class="note warn hidden" id="agent-unavailable"></div>
       <div class="note">The agent runs a local open model (Qwen3 via Ollama). It plans searches, reads results and decides what to look up next, then writes a cited answer. Expect 30 s to 2 min.</div>
     </div>
     <div class="status" id="agent-status"></div>
@@ -170,6 +171,11 @@ fetch("/api/meta").then((r) => r.json()).then((m) => {
   m.venues.slice(0, 17).forEach((v) => chip($("venues"), v.name, selected.venues, `${v.name} (${v.count.toLocaleString()})`));
   m.categories.forEach((c) => chip($("categories"), c, selected.categories));
   $("tagline").textContent = `Find ML papers that match your interests · ${m.papers.toLocaleString()} arXiv papers up to ${m.latest || "?"}`;
+  if (m.agent && !m.agent.available) {
+    $("agent-unavailable").textContent = "Research agent unavailable: " + m.agent.message + ". Search still works. Reload this page once it is fixed.";
+    $("agent-unavailable").classList.remove("hidden");
+    $("agent-btn").disabled = true;
+  }
 }).catch(() => { $("tagline").textContent = "Database unavailable"; });
 
 // ---------- search ----------
