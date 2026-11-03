@@ -1,0 +1,31 @@
+name: rerank20-minilm
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+    - kind: bm25
+      params:
+        k1: 1.2
+        b: 0.75
+    - kind: dense
+      params:
+        model: bge-small
+        query_instruction: true
+        ef_search: 100
+rerank:
+  kind: cross_encoder
+  top_n: 20
+  params:
+    model: cross-encoder/ms-marco-MiniLM-L6-v2
+    batch_size: 8
+    max_length: 512
+    fp16: false
+depth: 100
+recall_ks:
+- 10
+- 20
+- 50
+- 100
+ndcg_k: 10

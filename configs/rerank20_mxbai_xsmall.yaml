@@ -1,0 +1,22 @@
+# Hybrid first stage + cross-encoder on the top 20 only.
+# Reranker: mixedbread-ai/mxbai-rerank-xsmall-v1 (71M, ~8x smaller).
+name: rerank20-mxbai-xsmall
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+      - kind: bm25
+        params: {k1: 1.2, b: 0.75}
+      - kind: dense
+        params: {model: bge-small, query_instruction: true, ef_search: 100}
+rerank:
+  kind: cross_encoder
+  top_n: 20
+  params:
+    model: mixedbread-ai/mxbai-rerank-xsmall-v1
+    batch_size: 8     # faster than 32 on Apple MPS
+    max_length: 512
+    fp16: false
+depth: 100

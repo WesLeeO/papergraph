@@ -32,6 +32,7 @@ from papergraph.evals.benchmarks import get_benchmark
 from papergraph.evals.config import RunConfig, load_config
 from papergraph.evals.metrics import ndcg_at_k, recall_at_k, reciprocal_rank
 from papergraph.evals.stats import bootstrap_ci
+from papergraph.rerank import get_reranker
 from papergraph.retrieval.registry import RETRIEVERS as CORE_RETRIEVERS
 from papergraph.retrieval.registry import Retriever
 
@@ -49,8 +50,9 @@ class QueryResult:
     facets: dict[str, str]
     ranked: list[str]
     relevant: dict[str, float]  # paper id -> gain
-    latency_ms: float
+    latency_ms: float  # whole pipeline
     metrics: dict[str, float] = field(default_factory=dict)
+    stage_ms: dict[str, float] = field(default_factory=dict)  # per stage: retrieve, rerank
 
 
 def score(ranked: Sequence[str], gains: Mapping[str, float], cfg: RunConfig) -> dict[str, float]:
@@ -103,6 +105,7 @@ def summarize(results: Sequence[QueryResult]) -> dict[str, Any]:
         for facet, value in r.facets.items():
             by_facet[facet][value].append(r)
     latencies = [r.latency_ms for r in results]
+    stages = sorted({stage for r in results for stage in r.stage_ms})
     return {
         **_group(results),
         "by_facet": {
@@ -110,7 +113,26 @@ def summarize(results: Sequence[QueryResult]) -> dict[str, Any]:
             for facet, values in sorted(by_facet.items())
         },
         "latency_ms": {"p50": percentile(latencies, 50), "p95": percentile(latencies, 95)},
+        "stage_latency_ms": {
+            stage: {
+                "p50": percentile([r.stage_ms[stage] for r in results], 50),
+                "p95": percentile([r.stage_ms[stage] for r in results], 95),
+            }
+            for stage in stages
+        },
     }
+
+
+def merge_reranked(ranked: Sequence[str], reranked_top: Sequence[str]) -> list[str]:
+    """The reranked head, then the rest of the first-stage list in its order.
+
+    The reranker reorders only the first len(reranked_top) candidates; papers
+    below that keep their first-stage ranks, so Recall@100 stays comparable.
+    """
+    head = set(reranked_top)
+    if head != set(ranked[: len(reranked_top)]):
+        raise ValueError("reranker must return a permutation of the top candidates")
+    return [*reranked_top, *(d for d in ranked if d not in head)]
 
 
 def run_dir_name(started: datetime, name: str) -> str:
@@ -160,6 +182,7 @@ def load_queries(
 def run(cfg: RunConfig, bench: str, split: str, limit: int | None) -> Path:
     benchmark = get_benchmark(bench)
     retrieve = RETRIEVERS[cfg.retriever.kind]
+    rerank = get_reranker(cfg.rerank.kind) if cfg.rerank else None
     started = datetime.now(UTC)
     # Before anything is written: the run's own new directory would otherwise
     # show up in `git status` and mark every run dirty.
@@ -172,10 +195,15 @@ def run(cfg: RunConfig, bench: str, split: str, limit: int | None) -> Path:
         for i, (qid, text, facets, gains) in enumerate(queries, start=1):
             t0 = time.perf_counter()
             ranked = retrieve(conn, text, cfg.depth, **cfg.retriever.params)
+            t1 = time.perf_counter()
+            stage_ms = {"retrieve": (t1 - t0) * 1000}
+            if rerank is not None and cfg.rerank is not None:
+                top = ranked[: cfg.rerank.top_n]
+                ranked = merge_reranked(ranked, rerank(conn, text, top, **cfg.rerank.params))
+                stage_ms["rerank"] = (time.perf_counter() - t1) * 1000
             latency_ms = (time.perf_counter() - t0) * 1000
-            results.append(
-                QueryResult(qid, facets, ranked, gains, latency_ms, score(ranked, gains, cfg))
-            )
+            metrics = score(ranked, gains, cfg)
+            results.append(QueryResult(qid, facets, ranked, gains, latency_ms, metrics, stage_ms))
             if i % 50 == 0:
                 print(f"{i:>5}/{len(queries)} queries", flush=True)
 
@@ -216,6 +244,11 @@ def main() -> None:
     cfg = load_config(args.config)
     if cfg.retriever.kind not in RETRIEVERS:
         parser.error(f"unknown retriever {cfg.retriever.kind!r}; known: {sorted(RETRIEVERS)}")
+    if cfg.rerank is not None:
+        try:
+            get_reranker(cfg.rerank.kind)
+        except ValueError as e:
+            parser.error(str(e))
     out = run(cfg, args.bench, args.split, args.limit)
 
     summary = json.loads((out / "summary.json").read_text())
@@ -225,6 +258,8 @@ def main() -> None:
         print(f"  {metric:<10} {value:.3f}  [{low:.3f}, {high:.3f}]")
     lat = summary["latency_ms"]
     print(f"  latency    p50 {lat['p50']:.0f} ms, p95 {lat['p95']:.0f} ms")
+    for stage, st in summary["stage_latency_ms"].items():
+        print(f"    {stage:<8} p50 {st['p50']:.0f} ms, p95 {st['p95']:.0f} ms")
     print(f"wrote {out}")
 
 
