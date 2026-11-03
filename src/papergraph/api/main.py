@@ -29,6 +29,7 @@ from papergraph.agent.tools import Toolbox
 from papergraph.db import check_database, create_pool
 from papergraph.doctor import check_ollama
 from papergraph.ingest.arxiv import ML_CATEGORIES
+from papergraph.query import KINDS
 from papergraph.retrieval.filters import Filters
 
 STATIC = Path(__file__).parent / "static"
@@ -106,36 +107,54 @@ def api_search(
     year_to: Year = None,
     venues: str = "",
     categories: str = "",
+    skip: str = "",
     rerank: bool = True,
 ) -> dict[str, Any]:
-    """One page of papers for an interest (q), or by an author (optionally ranked by q).
+    """One page of results for what the user typed.
 
-    The full ranking is computed once per query and cached, so asking for the
-    next page (offset += limit) is cheap and consistent with the first.
+    `q` is parsed (papergraph.query): author names, venues, years and arXiv ids
+    become filters, the rest is the topic. `understood` reports what was
+    parsed so the UI can show it as chips; `skip` (e.g. "author,venue") turns
+    a kind of parsing off when the user removes its chip. The other parameters
+    are the filter panel and take precedence. The full ranking is computed
+    once and cached, so the next page (offset += limit) is cheap.
     """
     if not q.strip() and not author.strip():
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "give q, author, or both")
     if year_from and year_to and year_from > year_to:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "From year is after To year")
-    filters = make_filters(year_from, year_to, venues, categories)
+    skipped = [k for k in split_csv(skip) if k in KINDS]
     start = time.perf_counter()
-    matched: list[dict[str, Any]] = []
     with request.app.state.pool.connection() as conn:
-        if author.strip():
-            variants, ids = svc.author_ranked_ids(conn, author, query=q or None, filters=filters)
-            matched = [{"name": n, "papers": c} for n, c in variants]
-        else:
-            ids = svc.ranked_ids(conn, q, filters=filters, rerank=rerank)
-        papers = svc.fetch_papers(conn, ids[offset : offset + limit])
-    end = offset + len(papers)
+        r = svc.run_query(
+            conn,
+            q,
+            author=author,
+            filters=make_filters(year_from, year_to, venues, categories),
+            skip=skipped,
+            rerank=rerank,
+        )
+        papers = svc.fetch_papers(conn, r.ids[offset : offset + limit])
+    u, end = r.understood, offset + len(papers)
     return {
         "query": q,
-        "author": author,
-        "matched_authors": matched,
+        "understood": {
+            "topic": u.topic,
+            "author": r.author_name if not author.strip() else None,
+            "venues": list(u.venues),
+            "venue_year": u.venue_year,
+            "year_from": u.year_from,
+            "year_to": u.year_to,
+            "arxiv_id": u.arxiv_id,
+            "spans": u.spans,
+        },
+        "author": r.author_name,
+        "matched_authors": [{"name": n, "papers": c} for n, c in r.matched_authors],
+        "skip": skipped,
         "papers": [p.to_dict() for p in papers],
         "offset": offset,
-        "total": len(ids),
-        "next_offset": end if end < len(ids) else None,
+        "total": len(r.ids),
+        "next_offset": end if end < len(r.ids) else None,
         "ms": round((time.perf_counter() - start) * 1000),
     }
 

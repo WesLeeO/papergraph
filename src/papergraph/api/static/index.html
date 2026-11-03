@@ -77,6 +77,15 @@
   .answer li { margin-bottom: 6px; }
   .answer a.cite { color: var(--accent); text-decoration: none; font-weight: 600; }
 
+  /* understood-query chips */
+  .understood { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 4px 0; }
+  .uchip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text);
+           background: rgba(139,155,255,.12); border: 1px solid rgba(139,155,255,.35); border-radius: 999px;
+           padding: 3px 4px 3px 10px; }
+  .uchip .k { color: var(--accent); font-weight: 600; }
+  .uchip button { background: none; color: var(--muted); font-size: 15px; line-height: 1; padding: 0 6px; border-radius: 999px; }
+  .uchip button:hover { color: var(--text); background: rgba(255,255,255,.08); }
+
   /* results */
   .meta { color: var(--muted); font-size: 13px; margin: 22px 4px 4px; min-height: 20px; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
@@ -123,7 +132,7 @@
   </header>
 
   <form class="bar" id="form" autocomplete="off">
-    <input id="q" placeholder="Describe a research interest or ask a question…" maxlength="500" aria-label="Search">
+    <input id="q" placeholder="A topic, an author, “diffusion at ICLR 2024”, an arXiv id…" maxlength="500" aria-label="Search">
     <button class="btn" id="search-btn" type="submit">Search</button>
     <button class="btn ghost" id="agent-btn" type="button" title="A local AI agent searches step by step and writes a cited answer (30 s to 3 min)">Ask agent</button>
   </form>
@@ -158,6 +167,7 @@
     <div id="agent-papers"></div>
   </section>
 
+  <div class="understood" id="understood"></div>
   <div class="meta" id="meta"></div>
   <div id="results"></div>
   <div id="sentinel"></div>
@@ -165,7 +175,8 @@
 
   <div class="empty" id="welcome">
     <b>Find machine-learning papers that match your interests.</b><br>
-    Try “reducing hallucination in RAG”, or open Filters to search by author.
+    Type a topic (“reducing hallucination in RAG”), an author (“Yann LeCun”), or mix them:<br>
+    “world models by Yann LeCun since 2024”, “ICLR 2025 diffusion”, “2111.06377”.
   </div>
 </div>
 
@@ -278,33 +289,62 @@ async function loadPage() {
   if (my === token && state.nextOffset !== null && sentinelVisible()) loadPage();
 }
 
+function yearLabel(from, to) {
+  if (from && to) return from === to ? `${from}` : `${from}–${to}`;
+  return from ? `since ${from}` : `until ${to}`;
+}
+
+// What the query was understood as: one removable chip per parsed part.
+function renderUnderstood(b) {
+  const u = b.understood, chips = [];
+  if (u.author) {
+    const top = b.matched_authors[0];
+    chips.push(["author", "Author", top ? `${top.name} (${top.papers})` : u.author]);
+  }
+  if (u.venues.length) chips.push(["venue", "Venue", u.venues.join(", ") + (u.venue_year ? ` ${u.venue_year}` : "")]);
+  if (u.year_from || u.year_to) chips.push(["year", "Year", yearLabel(u.year_from, u.year_to)]);
+  if (u.arxiv_id) chips.push(["id", "arXiv", u.arxiv_id]);
+  $("understood").innerHTML = "";
+  for (const [kind, label, value] of chips) {
+    const c = document.createElement("span");
+    c.className = "uchip";
+    c.innerHTML = `<span class="k">${esc(label)}</span><span>${esc(value)}</span><button type="button" title="Search these words as a topic instead" aria-label="Remove">×</button>`;
+    c.querySelector("button").addEventListener("click", () => startSearch([...state.skip, kind]));
+    $("understood").appendChild(c);
+  }
+}
+
 function renderMeta(b) {
-  if (b.author) {
-    const names = b.matched_authors.map((a) => `${esc(a.name)} (${a.papers})`).join(", ");
-    $("meta").innerHTML = b.matched_authors.length
-      ? `${b.total.toLocaleString()} papers by ${names} · ${b.query ? "ranked by relevance to your query" : "newest first"} · ${b.ms} ms`
-      : `<span class="warn">No author matching “${esc(b.author)}”.</span> Check the spelling or try the surname alone.`;
+  renderUnderstood(b);
+  const u = b.understood;
+  const topic = u.topic && (u.author || u.venues.length || u.venue_year || u.year_from || u.year_to || u.arxiv_id)
+    ? ` on “${esc(u.topic)}”` : "";
+  if (b.author && !b.matched_authors.length) {
+    $("meta").innerHTML = `<span class="warn">No author matching “${esc(b.author)}”.</span> Check the spelling or try the surname alone.`;
+  } else if (!b.total) {
+    $("meta").textContent = "No papers found. Try other words, or remove a filter.";
   } else {
-    $("meta").textContent = b.total
-      ? `${b.total.toLocaleString()} papers · ${b.ms} ms · keyword + semantic search, reranked`
-      : "No papers found. Try other words or fewer filters.";
+    const order = b.author ? (u.topic ? "ranked by relevance" : "newest first")
+      : (u.topic ? "keyword + semantic search, reranked" : "newest first");
+    $("meta").innerHTML = `${b.total.toLocaleString()} papers${topic} · ${order} · ${b.ms} ms`;
   }
 }
 
 const sentinelVisible = () => $("sentinel").getBoundingClientRect().top < window.innerHeight + 600;
 new IntersectionObserver((entries) => { if (entries[0].isIntersecting) loadPage(); }, { rootMargin: "600px" }).observe($("sentinel"));
 
-$("form").addEventListener("submit", (e) => {
-  e.preventDefault();
+function startSearch(skip = []) {
   const params = searchParams();
   if (!params.get("q") && !params.get("author")) { $("q").focus(); return; }
+  if (skip.length) params.set("skip", skip.join(","));
   token += 1;
-  state = { params: params.toString(), nextOffset: 0, loading: false, token };
+  state = { params: params.toString(), skip, nextOffset: 0, loading: false, token };
   $("welcome").classList.add("hidden");
-  $("results").innerHTML = ""; $("end").classList.add("hidden");
+  $("results").innerHTML = ""; $("understood").innerHTML = ""; $("end").classList.add("hidden");
   window.scrollTo({ top: 0 });
   loadPage();
-});
+}
+$("form").addEventListener("submit", (e) => { e.preventDefault(); startSearch([]); });
 
 // ---------- research agent ----------
 function renderAnswer(md) {

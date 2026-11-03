@@ -35,3 +35,23 @@ def test_surname_first_order() -> None:
     assert name_matches("Fei-Fei Li", "Li Fei-Fei")
     assert name_matches("Fei-Fei Li", "Fei-Fei Li")
     assert not name_matches("Fei-Fei Li", "Li Wei")
+
+
+@pytest.mark.parametrize(
+    ("query", "candidate"),
+    [
+        ("Yann Le Cun", "Yann LeCun"),
+        ("Le Cun", "Yann LeCun"),
+        ("Laurens van der Maaten", "Laurens van der Maaten"),
+        ("Laurens vanderMaaten", "Laurens van der Maaten"),
+        ("van der Maaten", "Laurens J. P. van der Maaten"),
+        ("L. van der Maaten", "Laurens van der Maaten"),
+    ],
+)
+def test_surnames_compare_without_spaces(query: str, candidate: str) -> None:
+    assert name_matches(query, candidate)
+
+
+def test_split_surname_still_checks_the_first_name() -> None:
+    assert not name_matches("Yann Le Cun", "Xavier LeCun")
+    assert not name_matches("Yann Le Cun", "Yann Le Cam")

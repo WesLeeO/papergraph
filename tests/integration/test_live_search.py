@@ -150,3 +150,55 @@ def test_similar_papers_exclude_the_paper_itself(conn: psycopg.Connection) -> No
 def test_unknown_paper_id(conn: psycopg.Connection) -> None:
     assert svc.get_paper(conn, "9999.99999") is None
     assert svc.similar_papers(conn, "9999.99999") == []
+
+
+# --- query understanding on real data -------------------------------------------------
+
+
+@pytest.mark.parametrize("text", ["Yann Le Cun", "yann lecun", "Y. LeCun", "papers by Yann LeCun"])
+def test_typing_a_name_lists_that_authors_papers(conn: psycopg.Connection, text: str) -> None:
+    r = svc.run_query(conn, text)
+    assert r.author_name and r.understood.topic == ""
+    names = {n for n, _ in r.matched_authors}
+    papers = svc.fetch_papers(conn, r.ids[:20])
+    assert len(papers) == 20 and all(names & set(p.authors) for p in papers)
+
+
+def test_name_topic_and_year_together(conn: psycopg.Connection) -> None:
+    r = svc.run_query(conn, "Yann Le Cun world models since 2024")
+    assert r.understood.topic == "world models" and r.filters.year_from == 2024
+    papers = svc.fetch_papers(conn, r.ids[:10])
+    assert papers and all(p.published and p.published >= "2024" for p in papers)
+    assert any("world model" in p.title.lower() for p in papers[:3])
+
+
+def test_venue_and_year_without_topic_browses_newest_first(conn: psycopg.Connection) -> None:
+    r = svc.run_query(conn, "ICLR 2024")
+    papers = svc.fetch_papers(conn, r.ids[:20])
+    assert papers and all(p.venue == "ICLR" and p.venue_year == 2024 for p in papers)
+
+
+def test_arxiv_id_goes_straight_to_the_paper(conn: psycopg.Connection) -> None:
+    r = svc.run_query(conn, "arXiv:2111.06377v3")
+    assert r.ids[0] == "2111.06377"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Graph Attention Networks",
+        "Large Language Models",
+        "Deep Reinforcement Learning",
+        "Neural Radiance Fields",
+        "Vision Transformers",
+        "Kim Possible robots",  # a common surname in a topic
+    ],
+)
+def test_topic_phrases_are_not_mistaken_for_authors(conn: psycopg.Connection, text: str) -> None:
+    r = svc.run_query(conn, text)
+    assert r.author_name is None and r.understood.topic == text
+
+
+def test_removing_the_author_chip_searches_the_name_as_text(conn: psycopg.Connection) -> None:
+    r = svc.run_query(conn, "Yann LeCun", skip=["author"])
+    assert r.author_name is None and r.understood.topic == "Yann LeCun"

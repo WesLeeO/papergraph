@@ -11,6 +11,7 @@ from papergraph import search as svc
 from papergraph.agent.llm import LLMError
 from papergraph.api import main
 from papergraph.config import get_settings
+from papergraph.query import Understood
 from papergraph.retrieval.filters import Filters
 from papergraph.search import Paper
 
@@ -42,20 +43,25 @@ def client(monkeypatch: pytest.MonkeyPatch, calls: dict[str, Any]) -> Iterator[T
     monkeypatch.setenv("DATABASE_URL", "postgresql://x:x@127.0.0.1:1/x")
     get_settings.cache_clear()
 
-    def ranked_ids(
-        conn: object, q: str, filters: Filters | None = None, rerank: bool = True
-    ) -> list[str]:
-        calls["search"] = (q, filters)
-        return IDS
+    def run_query(
+        conn: object,
+        text: str,
+        *,
+        author: str = "",
+        filters: Filters | None = None,
+        skip: Any = (),
+        rerank: bool = True,
+    ) -> svc.QueryResult:
+        calls["run"] = (text, author, filters, tuple(skip))
+        parsed = "lovelace" in text.lower() and "author" not in skip and not author
+        name = author or ("Ada Lovelace" if parsed else "")
+        matched = [("Ada Lovelace", 3)] if "lovelace" in name.lower() else []
+        ids = (IDS[:3] if matched else []) if name else IDS
+        topic = "" if parsed else text
+        u = Understood(topic=topic, author="Ada Lovelace" if parsed else None)
+        return svc.QueryResult(u, name or None, matched, filters or Filters(), ids)
 
-    def author_ranked_ids(
-        conn: object, name: str, query: str | None = None, filters: Filters | None = None
-    ) -> tuple[list[tuple[str, int]], list[str]]:
-        calls["author"] = (name, query, filters)
-        return ([("Ada Lovelace", 3)], IDS[:3]) if "lovelace" in name.lower() else ([], [])
-
-    monkeypatch.setattr(svc, "ranked_ids", ranked_ids)
-    monkeypatch.setattr(svc, "author_ranked_ids", author_ranked_ids)
+    monkeypatch.setattr(svc, "run_query", run_query)
     monkeypatch.setattr(svc, "fetch_papers", lambda conn, ids: [paper(i) for i in ids])
     with TestClient(main.app) as c:
         main.app.state.pool = FakePool()
@@ -120,19 +126,42 @@ def test_pages_tile_the_ranking_without_gaps(client: TestClient) -> None:
 def test_filters_reach_the_search_service(client: TestClient, calls: dict[str, Any]) -> None:
     params = {"q": "rag", "year_from": 2021, "venues": "ICLR, NeurIPS,", "categories": "cs.CL"}
     client.get("/api/search", params=params)
-    assert calls["search"] == ("rag", Filters(2021, None, ("ICLR", "NeurIPS"), ("cs.CL",)))
+    text, author, filters, skip = calls["run"]
+    assert (text, author, skip) == ("rag", "", ())
+    assert filters == Filters(2021, None, ("ICLR", "NeurIPS"), ("cs.CL",))
 
 
-def test_author_search(client: TestClient, calls: dict[str, Any]) -> None:
+def test_parsed_author_is_reported_as_understood(client: TestClient) -> None:
+    body = client.get("/api/search", params={"q": "Ada Lovelace"}).json()
+    assert body["understood"]["author"] == "Ada Lovelace"
+    assert body["understood"]["topic"] == ""
+    assert body["matched_authors"] == [{"name": "Ada Lovelace", "papers": 3}]
+
+
+def test_skip_is_passed_through_and_unknown_kinds_are_dropped(
+    client: TestClient, calls: dict[str, Any]
+) -> None:
+    params = {"q": "Ada Lovelace", "skip": "author,bogus,year"}
+    body = client.get("/api/search", params=params).json()
+    assert calls["run"][3] == ("author", "year")
+    assert body["understood"]["author"] is None and body["skip"] == ["author", "year"]
+
+
+def test_explicit_author_is_not_reported_as_parsed(client: TestClient) -> None:
+    body = client.get("/api/search", params={"author": "Ada Lovelace"}).json()
+    assert body["understood"]["author"] is None  # it came from the panel, not the text
+    assert body["author"] == "Ada Lovelace"
+
+
+def test_author_search(client: TestClient) -> None:
     body = client.get("/api/search", params={"author": "Ada Lovelace"}).json()
     assert body["matched_authors"] == [{"name": "Ada Lovelace", "papers": 3}]
     assert len(body["papers"]) == 3 and body["next_offset"] is None
-    assert calls["author"][1] is None  # no topic: newest first
 
 
 def test_author_with_topic(client: TestClient, calls: dict[str, Any]) -> None:
     client.get("/api/search", params={"author": "Ada Lovelace", "q": "engines"})
-    assert calls["author"][:2] == ("Ada Lovelace", "engines")
+    assert calls["run"][:2] == ("engines", "Ada Lovelace")
 
 
 def test_unknown_author_is_an_empty_result(client: TestClient) -> None:
