@@ -50,7 +50,6 @@ def client(monkeypatch: pytest.MonkeyPatch, calls: dict[str, Any]) -> Iterator[T
         author: str = "",
         filters: Filters | None = None,
         skip: Any = (),
-        rerank: bool = True,
     ) -> svc.QueryResult:
         calls["run"] = (text, author, filters, tuple(skip))
         parsed = "lovelace" in text.lower() and "author" not in skip and not author

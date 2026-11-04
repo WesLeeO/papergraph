@@ -6,12 +6,13 @@ pgvector for the nearest vectors by cosine distance (`<=>`), served by the
 HNSW index: approximate, but milliseconds instead of a scan of every vector.
 
 Knobs (all in the config's retriever.params):
-- model: bge-small or specter2 (papergraph.encoders); paper vectors must
-  have been built with the same model (`make embed MODEL=...`).
-- query_instruction: BGE models were trained with a prefix on short queries
-  ("Represent this sentence for searching relevant passages: "). Whether it
-  helps on LitSearch's long questions is an empirical question. No effect for
-  models without an instruction (specter2 uses a query adapter instead).
+- model: a name in papergraph.encoders.MODELS; paper vectors must have
+  been built with the same model (`make embed MODEL=...`).
+- query_instruction: use the model's query prefix (BGE: "Represent this
+  sentence for searching relevant passages: ", nomic: "search_query: ",
+  Qwen3: a task description). Whether it helps on LitSearch's long questions
+  is an empirical question. No effect for models without one (gte-base;
+  specter2 uses a query adapter instead).
 - ef_search: how many candidates HNSW keeps while searching. Higher = closer
   to exact search, slower. pgvector returns at most ef_search rows, so it is
   always raised to at least k.

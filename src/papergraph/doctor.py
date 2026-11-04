@@ -10,9 +10,11 @@ from pathlib import Path
 
 import httpx
 import psycopg
+from psycopg import sql
 
 from papergraph.agent.llm import DEFAULT_HOST, DEFAULT_MODEL
 from papergraph.config import get_settings
+from papergraph.encoders import PRODUCT_MODEL, get_model
 
 DATA_FILE = Path("data/raw/arxiv-metadata-oai-snapshot.json")
 MIN_FREE_GB = 15
@@ -47,12 +49,15 @@ def check_data() -> tuple[bool, str]:
 
 
 def check_database() -> tuple[bool, str]:
+    product = get_model(PRODUCT_MODEL)
     try:
         with psycopg.connect(get_settings().database_url, connect_timeout=3) as conn:
             row = conn.execute(
-                "SELECT (SELECT count(*) FROM papers),"
-                " EXISTS (SELECT 1 FROM bm25_postings),"  # not count(*): 50M+ rows
-                " (SELECT count(*) FROM paper_embeddings_bge_small)"
+                sql.SQL(
+                    "SELECT (SELECT count(*) FROM papers),"
+                    " EXISTS (SELECT 1 FROM bm25_postings),"  # not count(*): 50M+ rows
+                    " (SELECT count(*) FROM {})"
+                ).format(sql.Identifier(product.table))
             ).fetchone()
     except psycopg.errors.UndefinedTable:
         return False, "Database is up but empty: run `make setup`"
@@ -71,7 +76,7 @@ def check_database() -> tuple[bool, str]:
             f"{papers:,} papers, but no BM25 index: `uv run python -m papergraph.retrieval.bm25`",
         )
     if not vectors:
-        return False, f"{papers:,} papers, but no embeddings: `make embed`"
+        return False, f"{papers:,} papers, but no {product.name} embeddings: `make embed`"
     note = "" if vectors >= papers * 0.99 else f" (dense search covers the newest {vectors:,})"
     return True, f"{papers:,} papers, BM25 index, {vectors:,} embeddings{note}"
 

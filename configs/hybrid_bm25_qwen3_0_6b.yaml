@@ -1,0 +1,15 @@
+# M4b: hybrid BM25 + dense Qwen3-Embedding-0.6B, fused with RRF, no reranker.
+# Identical to configs/hybrid_bm25_bge.yaml except the embedder, so a paired
+# compare isolates what Qwen3 adds at the fusion stage.
+name: hybrid-bm25-qwen3-0_6b
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+      - kind: bm25
+        params: {k1: 1.2, b: 0.75}
+      - kind: dense
+        params: {model: qwen3-0.6b, query_instruction: true, ef_search: 100}
+depth: 100

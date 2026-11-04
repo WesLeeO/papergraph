@@ -1,7 +1,8 @@
 """Embed papers and store the vectors. Run with `make embed [MODEL=specter2] [LIMIT=...]`.
 
-The model (bge-small by default, or specter2) decides the target table; see
-papergraph.encoders, which query embedding shares so the vectors match.
+The model (the product's, PRODUCT_MODEL, by default; or any name in MODELS)
+decides the target table; see papergraph.encoders, which query embedding
+shares so the vectors match.
 
 Runs on the host, not in Docker: Docker on macOS cannot use the Apple GPU (MPS).
 Resumable: each round selects papers that have no vector yet and commits on its
@@ -19,10 +20,7 @@ from pgvector.psycopg import register_vector
 from psycopg import sql
 
 from papergraph.db import connect
-from papergraph.encoders import device, get_encoder, get_model
-
-# Larger models need smaller batches (BERT-base at 512 tokens vs MiniLM).
-DEFAULT_BATCH = {"bge-small": 128, "specter2": 32}
+from papergraph.encoders import PRODUCT_MODEL, device, get_encoder, get_model
 
 _MISSING = """
 SELECT p.id, p.title, p.abstract
@@ -54,7 +52,9 @@ def _build_index(conn: psycopg.Connection, table: str, mem: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--schema", default="public", help="corpus namespace, e.g. bench_litsearch")
-    parser.add_argument("--model", default="bge-small", help="bge-small | specter2")
+    parser.add_argument(
+        "--model", default=PRODUCT_MODEL, help="a name in papergraph.encoders.MODELS"
+    )
     parser.add_argument("--limit", type=int, default=None, help="stop after N papers")
     parser.add_argument("--chunk", type=int, default=5000, help="papers fetched per round")
     parser.add_argument("--batch-size", type=int, default=None, help="papers per forward pass")
@@ -65,7 +65,7 @@ def main() -> None:
 
     model = get_model(args.model)
     encoder = get_encoder(model.name)
-    batch_size = args.batch_size or DEFAULT_BATCH[model.name]
+    batch_size = args.batch_size or model.batch_size
     table = sql.Identifier(model.table)
     missing = sql.SQL(_MISSING).format(table=table)
     copy_sql = sql.SQL("COPY {} (paper_id, embedding) FROM STDIN (FORMAT BINARY)").format(table)

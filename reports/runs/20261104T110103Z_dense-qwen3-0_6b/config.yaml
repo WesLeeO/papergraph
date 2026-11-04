@@ -1,0 +1,15 @@
+name: dense-qwen3-0_6b
+retriever:
+  kind: dense
+  params:
+    model: qwen3-0.6b
+    query_instruction: true
+    ef_search: 100
+rerank: null
+depth: 100
+recall_ks:
+- 10
+- 20
+- 50
+- 100
+ndcg_k: 10

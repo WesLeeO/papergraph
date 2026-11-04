@@ -41,6 +41,7 @@ class LLMError(RuntimeError):
     pass
 
 
+# structural typing related to ChatModel
 class OllamaClient:
     def __init__(
         self,
@@ -71,6 +72,26 @@ class OllamaClient:
             body["tools"] = tools
         try:
             resp = self.http.post(f"{self.host}/api/chat", json=body)
+            """
+            {
+              "model": "llama3",
+              "created_at": "2026-11-04T10:40:00.123456Z",
+              "message": {
+                "role": "assistant",
+                "content": "Hello! How can I help you today?",
+                "images": null,
+                "tool_calls": null
+              },
+              "done_reason": "stop",
+              "done": true,
+              "total_duration": 456789000,
+              "load_duration": 1234000,
+              "prompt_eval_count": 12,
+              "prompt_eval_duration": 456000,
+              "eval_count": 8,
+              "eval_duration": 40234000
+            }
+            """
         except httpx.HTTPError as e:
             raise LLMError(
                 f"cannot reach Ollama at {self.host} ({e}); is `ollama serve` running?"
@@ -82,6 +103,8 @@ class OllamaClient:
             ToolCall(c["function"]["name"], c["function"].get("arguments") or {})
             for c in msg.get("tool_calls") or []
         ]
+
+        # content + tools to be called
         return Reply(
             content=msg.get("content", ""), thinking=msg.get("thinking", ""), tool_calls=calls
         )

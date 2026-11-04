@@ -325,7 +325,7 @@ function renderMeta(b) {
     $("meta").textContent = "No papers found. Try other words, or remove a filter.";
   } else {
     const order = b.author ? (u.topic ? "ranked by relevance" : "newest first")
-      : (u.topic ? "keyword + semantic search, reranked" : "newest first");
+      : (u.topic ? "keyword + semantic search" : "newest first");
     $("meta").innerHTML = `${b.total.toLocaleString()} papers${topic} · ${order} · ${b.ms} ms`;
   }
 }

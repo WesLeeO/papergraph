@@ -93,8 +93,11 @@ papers). Typical timings:
 |---|---|---|
 | Load papers (reads the whole 5 GB file either way) | ~5–10 min | ~10–15 min |
 | Keyword (BM25) index | ~2 min | ~10 min |
-| Embeddings, Apple Silicon or NVIDIA GPU | ~15 min | ~1.5 h |
-| Embeddings, CPU only | ~1 h | several hours |
+| Embeddings (Qwen3-Embedding-0.6B), Apple Silicon or NVIDIA GPU | ~3 h | ~18 h |
+| Embeddings, CPU only | many hours | days: use a GPU |
+
+Embedding is the long step; search works while it runs, with semantic search
+covering the newest papers embedded so far.
 
 For the full corpus, use `make setup FROM_YEAR=` (empty). To start from a
 different year, e.g. 2024, use `make setup FROM_YEAR=2024`.
@@ -137,8 +140,8 @@ make agent Q="Which methods reduce hallucination in retrieval-augmented generati
 
 ```
                       ┌─ BM25 keyword search (Postgres inverted index) ─┐
-your interest ────────┤                                                 ├─ fusion (RRF) ─ reranker ─ results
-                      └─ semantic search (bge-small embeddings, pgvector) ┘
+your interest ────────┤                                                 ├─ fusion (RRF) ─ results
+                      └─ semantic search (Qwen3-Embedding-0.6B, pgvector) ┘
 
 research question ─ agent loop (Qwen3 8B via Ollama, running locally)
                       ├─ search_papers   the search pipeline above, with filters
@@ -150,13 +153,14 @@ research question ─ agent loop (Qwen3 8B via Ollama, running locally)
 
 - **Keyword + semantic search, fused.** BM25 is good at exact terms (method
   names, datasets); embeddings are good at paraphrases. Reciprocal Rank Fusion
-  combines the two rankings.
+  combines the two rankings, with the semantic side weighted twice as much.
 - **Query understanding.** Before retrieval, rules and database lookups pull
   author names (any spelling: "Yann Le Cun", "Y. LeCun"), venues, years and
   arXiv ids out of the query and turn them into filters; only the rest is
   matched against paper content.
-- **Reranking.** A small cross-encoder (`mxbai-rerank-xsmall`) reads the
-  question and each of the top 20 abstracts together, and reorders them.
+- **No reranker, on purpose.** Cross-encoders gave +0.04 nDCG@10 on top of a
+  bge-small hybrid, but nothing significant on top of Qwen3 embeddings, so
+  the product skips them and saves ~1 s per search.
 - **Agent.** A hand-written tool-calling loop with guardrails: a step limit,
   repeated-call detection, tool errors fed back to the model, citation
   checking, and a nudge when the model tries to answer after a single search.
@@ -170,10 +174,13 @@ benchmark, with bootstrap confidence intervals and paired comparisons:
 | BM25 | 0.440 |
 | Dense (bge-small) | 0.450 |
 | Hybrid (BM25 + dense, RRF) | 0.496 |
-| **Hybrid + reranker (default)** | **0.537** |
+| Hybrid + reranker (previous default) | 0.537 |
+| Dense (Qwen3-Embedding-0.6B) | 0.562 |
+| **Hybrid, BM25 + Qwen3, dense weighted 2× (default)** | **0.567** |
 
-Details: [`reports/m4/`](reports/m4/README.md) (search) and
-[`reports/m5/`](reports/m5/README.md) (reranking).
+Details: [`reports/m4/`](reports/m4/README.md) (search),
+[`reports/m5/`](reports/m5/README.md) (reranking) and
+[`reports/m4b/`](reports/m4b/README.md) (embedder and fusion).
 
 ## Troubleshooting
 
@@ -205,5 +212,5 @@ the design and the milestones are described in [`CLAUDE.md`](CLAUDE.md).
 
 [MIT](LICENSE) for the code. The arXiv metadata is released by Cornell
 University under [CC0](https://creativecommons.org/publicdomain/zero/1.0/);
-the models it downloads (bge-small, mxbai-rerank-xsmall, Qwen3) have their own
-licenses (MIT and Apache-2.0).
+the models it downloads (Qwen3-Embedding-0.6B and Qwen3 8B for the agent) are
+Apache-2.0.

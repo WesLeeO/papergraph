@@ -58,15 +58,15 @@ LIMIT ?=
 ingest:  ## Load arXiv ML papers into Postgres (LIMIT=5000 for a quick run)
 	docker compose run --rm --build ingest python -m papergraph.ingest.load $(if $(LIMIT),--limit $(LIMIT))
 
-MODEL ?= bge-small
-embed:  ## Embed papers on the host GPU (needs `make up`; MODEL=specter2, LIMIT=5000)
-	uv run --group embed python -m papergraph.ingest.embed --model $(MODEL) $(if $(LIMIT),--limit $(LIMIT))
+embed:  ## Embed papers on the host GPU with the product model (needs `make up`; MODEL=bge-small, LIMIT=5000)
+	uv run --group embed python -m papergraph.ingest.embed $(if $(MODEL),--model $(MODEL)) $(if $(LIMIT),--limit $(LIMIT))
 
 bench-litsearch:  ## Load, index (BM25) and embed LitSearch into schema bench_litsearch (needs `make up`)
 	uv run --group bench python -m papergraph.evals.benchmarks.litsearch
 	uv run python -m papergraph.retrieval.bm25 --schema bench_litsearch
 	uv run --group embed python -m papergraph.ingest.embed --schema bench_litsearch --model bge-small
 	uv run --group embed python -m papergraph.ingest.embed --schema bench_litsearch --model specter2
+	uv run --group embed python -m papergraph.ingest.embed --schema bench_litsearch --model qwen3-0.6b
 
 CONFIG ?= configs/baseline.yaml
 BENCH ?= litsearch

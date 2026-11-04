@@ -1,0 +1,40 @@
+{
+  "name": "product-qwen3-hybrid",
+  "benchmark": "litsearch",
+  "split": "dev",
+  "n_queries": 198,
+  "limit": null,
+  "corpus_schema": "bench_litsearch",
+  "corpus_revision": "9573fb284a1026c998df47024b888a163f0f0e25",
+  "git": {
+    "sha": "6b4ad743cd31ab3242424d8970536fb0eb204a77",
+    "dirty": true,
+    "dirty_files": [
+      "gitignore",
+      "CLAUDE.md",
+      "configs/baseline_lennorm.yaml",
+      "src/papergraph/agent/llm.py",
+      "src/papergraph/api/main.py",
+      "src/papergraph/api/static/index.html",
+      "src/papergraph/encoders.py",
+      "src/papergraph/ingest/embed.py",
+      "src/papergraph/migrate.py",
+      "src/papergraph/retrieval/dense.py",
+      "src/papergraph/search.py",
+      "tests/test_api.py",
+      "tests/test_encoders.py",
+      "configs/dense_bge_base.yaml",
+      "configs/dense_bge_large.yaml",
+      "configs/dense_qwen3_0_6b.yaml",
+      "configs/hybrid_bm25_qwen3_0_6b.yaml",
+      "configs/product.yaml",
+      "configs/product_bge_base.yaml",
+      "configs/product_bge_large.yaml",
+      "configs/product_qwen3_0_6b.yaml",
+      "configs/qwen3_hybrid_rerank_bge_m3.yaml",
+      "src/papergraph/migrations/0009_embedder_sweep.sql"
+    ]
+  },
+  "started_at": "2026-11-04T11:23:28.887509+00:00",
+  "duration_s": 65.3
+}

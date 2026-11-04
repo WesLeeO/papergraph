@@ -120,10 +120,10 @@ Rigor rules:
 - Python 3.12, `uv` for dependencies, `ruff` + `mypy` + `pytest`
 - Postgres 16 + `pgvector` with HNSW indexes for vectors, full text, and graph
   edges. One DB on purpose; revisit only if the evals or latency demand it.
-- Embeddings to compare: `BAAI/bge-small-en-v1.5` vs `allenai/specter2`
-- Reranker: cross-encoder `mixedbread-ai/mxbai-rerank-xsmall-v1` on the top 20
-  (default, chosen for latency); `BAAI/bge-reranker-v2-m3` as the quality
-  reference; LLM rerank as a comparison
+- Embeddings: product `Qwen/Qwen3-Embedding-0.6B` (M4b); `BAAI/bge-small-en-v1.5`
+  and `allenai/specter2` kept for comparison
+- Reranker: none in the product (M4b). `mixedbread-ai/mxbai-rerank-xsmall-v1`
+  and `BAAI/bge-reranker-v2-m3` stay available to eval configs
 - LLM: Claude via the `anthropic` SDK (`claude-sonnet-5-5` generator,
   `claude-opus-5-5` judge). Key from `ANTHROPIC_API_KEY` in `.env`, never committed.
 - API: FastAPI. Tracing: Arize Phoenix, self-hosted.
@@ -183,8 +183,8 @@ A milestone is done only when its eval or test evidence exists.
 
 1. ✅ **Infra skeleton:** compose (db + api), Makefile, healthchecks, CI lint and tests.
 2. ✅ **Corpus ingest:** arXiv ML papers in Postgres, regex venues, paper-level embeddings.
-   581,162 papers, 12.3% with a regex venue. bge-small: 210k embedded so far
-   (newest first from now on; `make embed` resumes), ~112 papers/s on MPS.
+   581,162 papers, 12.3% with a regex venue. bge-small: all 581,162 embedded
+   (checked 2026-11-04; `make embed` resumes), ~112 papers/s on MPS.
 3. ✅ **Eval harness v0:** LitSearch indexed, runner, retrieval metrics, run
    artifacts. Do this before any clever retrieval. LitSearch in schema
    `bench_litsearch` (64,183 papers, 597 queries, hashed 198 dev / 399 test
@@ -195,6 +195,12 @@ A milestone is done only when its eval or test evidence exists.
    nDCG@10 0.496 [0.436, 0.556] vs 0.352 for the FTS baseline (paired +0.143
    [+0.103, +0.186]); Recall@100 0.813. SPECTER2 lost to bge-small (−0.198
    nDCG@10 dense). BM25 defaults kept; RRF weights not tuned.
+4b. **Stronger embedder** (2026-11-04, dev evidence in `reports/m4b/README.md`):
+   Qwen3-Embedding-0.6B vs bge-small: +0.113 nDCG@10 dense, +0.064 in the
+   hybrid. With a Qwen3 first stage, rerankers add nothing significant.
+   New product: BM25 (max_df 0.2) + Qwen3 (RRF weight 2), no reranker:
+   nDCG@10 0.567, Recall@10–100 significantly above the old product, ~1/3 the
+   latency. Left: full-corpus Qwen3 embedding (started 2026-11-04, ~18 h).
 5. ✅ **Reranking:** cross-encoder vs LLM rerank, with the quality vs latency trade-off.
    See `reports/m5/README.md`. Cross-encoder on the hybrid: +0.06 nDCG@10,
    mostly on specific questions; depth 20 keeps the full gain at 1/5 of the

@@ -1,0 +1,22 @@
+# M4b: Qwen3 hybrid + bge-reranker-v2-m3 (the M5 quality reference) on the top 20:
+# does a stronger reranker still add something on top of a Qwen3 first stage?
+name: qwen3-hybrid-rerank-bge-m3
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+      - kind: bm25
+        params: {k1: 1.2, b: 0.75, max_df: 0.1}
+      - kind: dense
+        params: {model: qwen3-0.6b, query_instruction: true, ef_search: 100}
+rerank:
+  kind: cross_encoder
+  top_n: 20
+  params:
+    model: BAAI/bge-reranker-v2-m3
+    batch_size: 8     # faster than 32 on Apple MPS
+    max_length: 512
+    fp16: true      # same ranking as fp32 (M5), ~30% faster
+depth: 100

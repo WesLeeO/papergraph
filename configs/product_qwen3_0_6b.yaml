@@ -1,0 +1,22 @@
+# M4b embedder sweep: the full product pipeline (src/papergraph/search.py) with
+# qwen3-0.6b in place of bge-small. Compare against configs/product.yaml.
+name: product-qwen3-0_6b
+retriever:
+  kind: hybrid
+  params:
+    k_rrf: 60
+    candidates: 100
+    retrievers:
+      - kind: bm25
+        params: {k1: 1.2, b: 0.75, max_df: 0.1}
+      - kind: dense
+        params: {model: qwen3-0.6b, query_instruction: true, ef_search: 100}
+rerank:
+  kind: cross_encoder
+  top_n: 20
+  params:
+    model: mixedbread-ai/mxbai-rerank-xsmall-v1
+    batch_size: 8     # faster than 32 on Apple MPS
+    max_length: 512
+    fp16: false
+depth: 100

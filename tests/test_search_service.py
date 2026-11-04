@@ -86,3 +86,20 @@ def test_like_wildcards_in_names_are_escaped(name: str, pattern: str) -> None:
 
 def test_empty_query_ranks_nothing() -> None:
     assert svc.ranked_ids(None, "   ") == []  # type: ignore[arg-type]
+
+
+def test_product_config_matches_served_pipeline() -> None:
+    """configs/product.yaml is how the served pipeline gets evaluated: if it
+    drifts from search.HYBRID, eval numbers stop describing the product."""
+    from pathlib import Path
+
+    from papergraph.evals.config import load_config
+
+    config = load_config(Path(__file__).parents[1] / "configs" / "product.yaml")
+    assert config.rerank is None
+    assert config.retriever.kind == "hybrid"
+    served = [{**r, "weight": float(r.get("weight", 1.0))} for r in svc.HYBRID]
+    evaluated = [
+        {**r, "weight": float(r.get("weight", 1.0))} for r in config.retriever.params["retrievers"]
+    ]
+    assert evaluated == served

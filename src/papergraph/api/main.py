@@ -5,8 +5,8 @@
     GET /api/agent        the research agent, streamed as Server-Sent Events
     GET /api/meta         filter options (venues, categories) and corpus size
 
-Run on the host with `make serve` (uses the Mac GPU for the embedder and the
-reranker); the agent needs a local Ollama server (`ollama serve`).
+Run on the host with `make serve` (uses the Mac GPU for the query embedder);
+the agent needs a local Ollama server (`ollama serve`).
 """
 
 import os
@@ -36,11 +36,11 @@ STATIC = Path(__file__).parent / "static"
 
 
 def _warm_up(pool: ConnectionPool) -> None:
-    """Load the embedder, reranker and local LLM in the background, so the first
+    """Load the embedder and local LLM in the background, so the first
     user request doesn't pay ~1 minute of model loading."""
     try:
         with pool.connection() as conn:
-            svc.search(conn, "warm up the embedding and reranking models", k=1)
+            svc.search(conn, "warm up the embedding model", k=1)
         OllamaClient(DEFAULT_MODEL).chat([{"role": "user", "content": "Say OK."}], None)
         print("warm-up done: models loaded", flush=True)
     except Exception as e:  # warm-up is best effort
@@ -108,7 +108,6 @@ def api_search(
     venues: str = "",
     categories: str = "",
     skip: str = "",
-    rerank: bool = True,
 ) -> dict[str, Any]:
     """One page of results for what the user typed.
 
@@ -132,7 +131,6 @@ def api_search(
             author=author,
             filters=make_filters(year_from, year_to, venues, categories),
             skip=skipped,
-            rerank=rerank,
         )
         papers = svc.fetch_papers(conn, r.ids[offset : offset + limit])
     u, end = r.understood, offset + len(papers)

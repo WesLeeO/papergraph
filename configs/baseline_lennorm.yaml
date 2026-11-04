@@ -1,8 +1,0 @@
-# Same as baseline.yaml, but ts_rank divides by 1 + log(document length), so
-# long abstracts don't win just by containing more of the query words.
-name: baseline-fts-lennorm
-retriever:
-  kind: pg_fts
-  params:
-    normalization: 1
-depth: 100

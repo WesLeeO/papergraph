@@ -1,8 +1,11 @@
 """Paper search over a corpus: the product pipeline, shared by the web API and the agent.
 
-    hybrid (BM25 + bge-small, RRF) -> cross-encoder rerank of the top 20 -> paper records
+    hybrid (BM25 + Qwen3-Embedding-0.6B, RRF) -> paper records
 
-These defaults are the M4/M5 winners on LitSearch dev (see reports/m4, reports/m5).
+These defaults are the M4b winner on LitSearch dev (see reports/m4b). No
+reranker: on top of a Qwen3 first stage, cross-encoders added nothing
+significant (mxbai-xsmall -0.006, bge-reranker-v2-m3 +0.011 nDCG@10), and
+skipping them saves ~1 s per query.
 """
 
 import threading
@@ -15,23 +18,28 @@ from typing import Any, TypeVar
 import psycopg
 from psycopg import sql
 
-from papergraph.encoders import get_encoder, get_model
+from papergraph.encoders import PRODUCT_MODEL, get_encoder, get_model
 from papergraph.query import Understood, understand
-from papergraph.rerank import cross_encoder, merge_reranked
 from papergraph.retrieval import dense, fusion
 from papergraph.retrieval.filters import Filters, filter_sql
 
+# Dense search, "similar papers" and author-topic ranking all compare against
+# vectors built with this model.
+DENSE_MODEL = PRODUCT_MODEL
 HYBRID: list[dict[str, Any]] = [
-    # max_df=0.1 skips query terms in >10% of papers: ~6-10x faster BM25 on the
-    # 581k corpus, and no measured loss for this full pipeline on LitSearch dev
-    # (nDCG@10 -0.000 [-0.018, +0.017]; run 20261103T170554Z_product-maxdf01).
-    {"kind": "bm25", "params": {"k1": 1.2, "b": 0.75, "max_df": 0.1}},
+    # max_df skips query terms found in more than that fraction of papers: on
+    # the 581k corpus BM25 takes ~0.3 s at 0.2 vs ~2 s unpruned. Pruning makes
+    # BM25 weaker, so dense gets twice its weight in RRF; together they beat
+    # equal weights at max_df 0.1 by +0.051 nDCG@10 on LitSearch dev (M4b grid,
+    # run 20261104T112053Z_grid-maxdf02-w2). With weight 2, papers found only
+    # by BM25 can still enter the top 100; at 3 they no longer could.
+    {"kind": "bm25", "params": {"k1": 1.2, "b": 0.75, "max_df": 0.2}},
     {
         "kind": "dense",
-        "params": {"model": "bge-small", "query_instruction": True, "ef_search": 100},
+        "params": {"model": DENSE_MODEL, "query_instruction": True, "ef_search": 100},
+        "weight": 2.0,
     },
 ]
-RERANK_TOP_N = 20
 # Candidates per retriever when ranking a query for browsing. Up to twice this
 # many papers come out of fusion: the "end of results" a user can scroll to.
 POOL = 300
@@ -141,24 +149,19 @@ def ranked_ids(
     conn: psycopg.Connection,
     query: str,
     filters: Filters | None = None,
-    rerank: bool = True,
 ) -> list[str]:
     """Every paper id the pipeline returns for `query`, best first (cached).
 
-    Hybrid retrieval over a deep pool (POOL candidates per retriever), with
-    the top RERANK_TOP_N reordered by the cross-encoder.
+    Hybrid retrieval over a deep pool (POOL candidates per retriever).
     """
     if not query.strip():
         return []
     f = filters or Filters()
 
     def compute() -> list[str]:
-        ids = fusion.search(conn, query, 2 * POOL, retrievers=HYBRID, candidates=POOL, filters=f)
-        if rerank and ids:
-            ids = merge_reranked(ids, cross_encoder.rerank(conn, query, ids[:RERANK_TOP_N]))
-        return ids
+        return fusion.search(conn, query, 2 * POOL, retrievers=HYBRID, candidates=POOL, filters=f)
 
-    key = ("search", _corpus_key(conn), query.strip(), f, rerank)
+    key = ("search", _corpus_key(conn), query.strip(), f)
     return _rankings.get_or_compute(key, compute)
 
 
@@ -167,11 +170,10 @@ def search(
     query: str,
     k: int = 10,
     filters: Filters | None = None,
-    rerank: bool = True,
     offset: int = 0,
 ) -> list[Paper]:
     """Papers ranked offset..offset+k for a free-text interest, best first."""
-    ids = ranked_ids(conn, query, filters, rerank)
+    ids = ranked_ids(conn, query, filters)
     return fetch_papers(conn, ids[offset : offset + k])
 
 
@@ -184,7 +186,7 @@ def similar_papers(
     conn: psycopg.Connection, paper_id: str, k: int = 10, filters: Filters | None = None
 ) -> list[Paper]:
     """Papers whose embeddings are nearest to this paper's ("more like this")."""
-    m = get_model("bge-small")
+    m = get_model(DENSE_MODEL)
     row = conn.execute(
         f"SELECT embedding::text FROM {m.table} WHERE paper_id = %s", (paper_id,)
     ).fetchone()
@@ -277,7 +279,7 @@ def author_ranked_ids(
     """Name variants matched, and the ids of all their papers (cached).
 
     Without `query`: newest first. With `query`: ranked by relevance to it
-    (embedding similarity, then the cross-encoder on the top 20). An author
+    (embedding similarity to the topic). An author
     has at most a few hundred papers, so they are ranked exactly instead of
     searching the whole corpus with a very selective filter.
     """
@@ -299,23 +301,29 @@ def author_ranked_ids(
         )
         ids = [r[0] for r in rows]
         if q and ids:
-            m = get_model("bge-small")
+            # A topic was given ("Kaiming He" + "masked autoencoders"): reorder this
+            # author's papers by how close each one is in meaning to the topic.
+            m = get_model(DENSE_MODEL)  # the model the paper vectors were built with
+            # Embed the topic as a search query (with the model's query instruction),
+            # the same way dense retrieval does, so it is comparable to paper vectors.
             embedded = get_encoder(m.name).encode_query(dense.query_text(q, m, True))
-            vec = dense.vector_literal(embedded)
+            vec = dense.vector_literal(embedded)  # as pgvector text: '[0.12,-0.03,...]'
+            # Rank only this author's papers (`= ANY(ids)`, at most a few hundred) by
+            # cosine distance `<=>` to the topic vector, closest first. With so few
+            # rows Postgres compares every one exactly; no HNSW index is involved.
             ranked = [
                 r[0]
                 for r in conn.execute(
                     sql.SQL(
                         "SELECT paper_id FROM {} WHERE paper_id = ANY(%s) "
                         "ORDER BY embedding <=> %s::vector"
-                    ).format(sql.Identifier(m.table)),
-                    (ids, vec),
+                    ).format(sql.Identifier(m.table)),  # table name, safely quoted
+                    (ids, vec),  # bound parameters: the id list and the query vector
                 )
             ]
             # Papers without an embedding yet keep their date order, after the ranked ones.
             seen = set(ranked)
             ids = ranked + [i for i in ids if i not in seen]
-            ids = merge_reranked(ids, cross_encoder.rerank(conn, q, ids[:RERANK_TOP_N]))
         return variants, ids
 
     key = ("author", _corpus_key(conn), name.strip().lower(), q, f)
@@ -377,7 +385,6 @@ def run_query(
     author: str = "",
     filters: Filters | None = None,
     skip: Sequence[str] = (),
-    rerank: bool = True,
 ) -> QueryResult:
     """Understand `text` (papergraph.query), then rank papers accordingly.
 
@@ -408,7 +415,7 @@ def run_query(
     if name:
         matched, ids = author_ranked_ids(conn, name, topic or None, f)
     elif topic:
-        ids = ranked_ids(conn, topic, f, rerank)
+        ids = ranked_ids(conn, topic, f)
     elif not f.empty:
         ids = browse_ids(conn, f)
     else:

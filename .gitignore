@@ -9,3 +9,6 @@ __pycache__/
 
 data/
 reports/runs/**/*.jsonl
+
+# Claude Code app settings (machine-specific paths)
+.claude/

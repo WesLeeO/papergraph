@@ -1,0 +1,10 @@
+# M4b embedder sweep: dense retrieval alone with qwen3-0.6b, with its query prefix.
+# Compare against configs/dense_bge.yaml (bge-small).
+name: dense-qwen3-0_6b
+retriever:
+  kind: dense
+  params:
+    model: qwen3-0.6b
+    query_instruction: true
+    ef_search: 100
+depth: 100

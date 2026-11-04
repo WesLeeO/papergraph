@@ -49,6 +49,7 @@ def migrate(schema: str = "public") -> list[str]:
                 continue
             # One transaction per file: a failing migration leaves no half-applied schema.
             with conn.transaction():
+                # runs whole sql file
                 conn.execute(f.read_text())
                 conn.execute("INSERT INTO schema_migrations (version) VALUES (%s)", (f.name,))
             applied.append(f.name)
